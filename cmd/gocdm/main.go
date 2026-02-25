@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,15 +15,37 @@ import (
 )
 
 func main() {
+	run(os.Args[1:], os.Exit)
+}
+
+func run(args []string, exit func(int)) {
+	fs := flag.NewFlagSet("gocdm", flag.ContinueOnError)
+	configPathFlag := fs.String("config", "", "Path to config file")
+	dryRun := fs.Bool("dry-run", false, "Dry run mode (print command instead of executing)")
+	forceMenu := fs.Bool("menu", false, "Force menu display even if only one session is found")
+
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			exit(0)
+		} else {
+			exit(2)
+		}
+		return
+	}
+
 	var configPath string
-	if len(os.Args) > 1 {
-		configPath = os.Args[1]
+	if *configPathFlag != "" {
+		configPath = *configPathFlag
+	} else if fs.NArg() > 0 {
+		// Backward compatibility: first positional argument is config path
+		configPath = fs.Arg(0)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
+		exit(1)
+		return
 	}
 
 	// Load state (last session)
@@ -39,11 +62,13 @@ func main() {
 		sessions, err = session.DiscoverSessions(home)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error discovering sessions: %v\n", err)
-			os.Exit(1)
+			exit(1)
+			return
 		}
 		if len(sessions) == 0 {
 			fmt.Fprintln(os.Stderr, "No sessions found.")
-			os.Exit(1)
+			exit(1)
+			return
 		}
 	} else {
 		// Convert config lists to sessions
@@ -53,20 +78,21 @@ func main() {
 			if i < len(cfg.NameList) {
 				name = cfg.NameList[i]
 			}
-			flag := "X"
+			sType := "X"
 			if i < len(cfg.FlagList) {
-				flag = cfg.FlagList[i]
+				sType = cfg.FlagList[i]
 			}
 			sessions = append(sessions, session.Session{
 				Name: name,
 				Exec: cfg.BinList[i],
-				Type: flag,
+				Type: sType,
 			})
 		}
 	}
 
 	var selectedIdx int
-	if len(sessions) == 1 {
+	// Show menu if more than 1 session OR forceMenu is true
+	if len(sessions) == 1 && !*forceMenu {
 		selectedIdx = 0
 	} else {
 		optionNames := make([]string, len(sessions))
@@ -83,14 +109,16 @@ func main() {
 		idx, err := ui.ShowMenu("Console Display Manager", optionNames, details, cfg.CountFrom, defaultIdx, cfg.DialogRC)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Selection cancelled or error: %v\n", err)
-			os.Exit(2)
+			exit(2)
+			return
 		}
 		selectedIdx = idx
 	}
 
 	if selectedIdx < 0 || selectedIdx >= len(sessions) {
 		fmt.Fprintf(os.Stderr, "Invalid selection index: %d\n", selectedIdx)
-		os.Exit(1)
+		exit(1)
+		return
 	}
 
 	selectedSession := sessions[selectedIdx]
@@ -101,31 +129,38 @@ func main() {
 	}
 
 	// Normalize flag
-	flag := strings.ToUpper(selectedSession.Type)
+	flagVal := strings.ToUpper(selectedSession.Type)
 	// gocdm script: [Cc] -> Console, [Xx] -> X.
-	if strings.HasPrefix(flag, "C") {
-		flag = "C"
-	} else if strings.HasPrefix(flag, "W") {
-		flag = "C" // Treat Wayland as Console/Command
-	} else if strings.HasPrefix(flag, "X") {
-		flag = "X"
+	if strings.HasPrefix(flagVal, "C") {
+		flagVal = "C"
+	} else if strings.HasPrefix(flagVal, "W") {
+		flagVal = "C" // Treat Wayland as Console/Command
+	} else if strings.HasPrefix(flagVal, "X") {
+		flagVal = "X"
 	}
 
-	switch flag {
+	switch flagVal {
 	case "C":
 		// Console program (and Wayland)
 		parts := strings.Fields(selectedSession.Exec)
 		if len(parts) == 0 {
 			fmt.Fprintln(os.Stderr, "Empty command")
-			os.Exit(1)
+			exit(1)
+			return
 		}
 		bin := parts[0]
 		args := parts[1:]
 
+		if *dryRun {
+			fmt.Printf("Dry run: would execute console program: %s %v\n", bin, args)
+			return
+		}
+
 		binary, err := exec.LookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
-			os.Exit(1)
+			exit(1)
+			return
 		}
 
 		env := os.Environ()
@@ -133,7 +168,8 @@ func main() {
 
 		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
-			os.Exit(1)
+			exit(1)
+			return
 		}
 
 	case "X":
@@ -143,26 +179,47 @@ func main() {
 		// Find free display
 		disp, err := x11.FindFreeDisplay()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to find free display: %v\n", err)
-			os.Exit(1)
+			if *dryRun {
+				fmt.Fprintf(os.Stderr, "Dry run warning: Failed to find free display (likely no X running or tools missing): %v. Assuming :0.\n", err)
+				disp = 0
+			} else {
+				fmt.Fprintf(os.Stderr, "Failed to find free display: %v\n", err)
+				exit(1)
+				return
+			}
 		}
 		display = disp
 
 		vt, err := x11.GetVT(cfg.XTTY, display)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get VT: %v\n", err)
-			os.Exit(1)
+			if *dryRun {
+				fmt.Fprintf(os.Stderr, "Dry run warning: Failed to get VT: %v. Assuming VT7.\n", err)
+				vt = "7"
+			} else {
+				fmt.Fprintf(os.Stderr, "Failed to get VT: %v\n", err)
+				exit(1)
+				return
+			}
 		}
 
 		parts := strings.Fields(selectedSession.Exec)
+
+		if *dryRun {
+			fmt.Printf("Dry run: would launch X session: %v on display :%d VT%s\n", parts, display, vt)
+			fmt.Printf("X server args: %v\n", cfg.ServerArgs)
+			return
+		}
+
 		err = x11.LaunchXSession(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
-			os.Exit(1)
+			exit(1)
+			return
 		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown session type: %s\n", selectedSession.Type)
-		os.Exit(1)
+		exit(1)
+		return
 	}
 }
