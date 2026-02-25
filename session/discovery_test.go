@@ -13,67 +13,111 @@ func TestDiscoverSessions(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	x11Dir := filepath.Join(tmpDir, "X11", "Sessions")
+	// Directory structure
+	x11Dir := filepath.Join(tmpDir, "etc", "X11", "Sessions")
 	xsessionsDir := filepath.Join(tmpDir, "usr", "share", "xsessions")
+	waylandSessionsDir := filepath.Join(tmpDir, "usr", "share", "wayland-sessions")
+	userHome := filepath.Join(tmpDir, "home", "user")
+	userConfigWayland := filepath.Join(userHome, ".config", "wayland-sessions")
 
-	if err := os.MkdirAll(x11Dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(xsessionsDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create dummy X11 session
-	if err := os.WriteFile(filepath.Join(x11Dir, "x11session"), []byte("#!/bin/sh\necho x11"), 0755); err != nil {
-		t.Fatal(err)
+	dirs := []string{x11Dir, xsessionsDir, waylandSessionsDir, userHome, userConfigWayland}
+	for _, d := range dirs {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	// Create dummy XSession .desktop file
-	// We use /bin/sh which should exist
+	// 1. Legacy X11 Session
+	if err := os.WriteFile(filepath.Join(x11Dir, "legacy_x11"), []byte("#!/bin/sh\necho legacy"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Standard XSession .desktop
 	desktopContent := `[Desktop Entry]
-Name=Test Session
-Exec=/bin/sh -c "echo test"
+Name=Standard X Session
+Exec=/bin/sh -c "echo standard"
 `
-	if err := os.WriteFile(filepath.Join(xsessionsDir, "test.desktop"), []byte(desktopContent), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(xsessionsDir, "standard.desktop"), []byte(desktopContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Wayland Session .desktop
+	waylandContent := `[Desktop Entry]
+Name=Wayland Session
+Exec=/bin/sh -c "echo wayland"
+`
+	if err := os.WriteFile(filepath.Join(waylandSessionsDir, "wayland.desktop"), []byte(waylandContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. User .xinitrc
+	if err := os.WriteFile(filepath.Join(userHome, ".xinitrc"), []byte("#!/bin/sh\necho user"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. User Custom Wayland Session
+	userWaylandContent := `[Desktop Entry]
+Name=User Wayland
+Exec=/bin/sh -c "echo userwayland"
+`
+	if err := os.WriteFile(filepath.Join(userConfigWayland, "user-wayland.desktop"), []byte(userWaylandContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Save original vars
 	origX11 := X11SessionsDir
 	origXSessions := XSessionsDir
+	origWaylandSessions := WaylandSessionsDir
 	defer func() {
 		X11SessionsDir = origX11
 		XSessionsDir = origXSessions
+		WaylandSessionsDir = origWaylandSessions
 	}()
 
 	X11SessionsDir = x11Dir
 	XSessionsDir = xsessionsDir
+	WaylandSessionsDir = waylandSessionsDir
 
-	// Test X11 Sessions (priority)
-	sessions, err := DiscoverSessions()
+	// Test Discovery
+	sessions, err := DiscoverSessions(userHome)
 	if err != nil {
 		t.Fatalf("DiscoverSessions failed: %v", err)
 	}
 
-	if len(sessions) != 1 {
-		t.Errorf("Expected 1 session, got %d", len(sessions))
-	}
-	if len(sessions) > 0 && sessions[0].Name != "x11session" {
-		t.Errorf("Expected session name 'x11session', got '%s'", sessions[0].Name)
+	// Expected sessions:
+	// 1. Custom X Session (.xinitrc) (Type X)
+	// 2. User Wayland (Type W)
+	// 3. legacy_x11 (Type X)
+	// 4. Standard X Session (Type X)
+	// 5. Wayland Session (Type W)
+
+	expectedCount := 5
+	if len(sessions) != expectedCount {
+		t.Errorf("Expected %d sessions, got %d", expectedCount, len(sessions))
+		for _, s := range sessions {
+			t.Logf("Found: %s (%s)", s.Name, s.Type)
+		}
 	}
 
-	// Remove X11 session to test XSessions fallback
-	os.Remove(filepath.Join(x11Dir, "x11session"))
-
-	sessions, err = DiscoverSessions()
-	if err != nil {
-		t.Fatalf("DiscoverSessions failed: %v", err)
+	// Verify specific sessions presence
+	found := make(map[string]string) // Name -> Type
+	for _, s := range sessions {
+		found[s.Name] = s.Type
 	}
 
-	if len(sessions) != 1 {
-		t.Errorf("Expected 1 session, got %d", len(sessions))
+	expectations := map[string]string{
+		"Custom X Session (.xinitrc)": "X",
+		"User Wayland":                "W",
+		"legacy_x11":                  "X",
+		"Standard X Session":          "X",
+		"Wayland Session":             "W",
 	}
-	if len(sessions) > 0 && sessions[0].Name != "Test Session" {
-		t.Errorf("Expected session name 'Test Session', got '%s'", sessions[0].Name)
+
+	for name, typ := range expectations {
+		if gotType, ok := found[name]; !ok {
+			t.Errorf("Expected session '%s' not found", name)
+		} else if gotType != typ {
+			t.Errorf("Expected session '%s' to have type '%s', got '%s'", name, typ, gotType)
+		}
 	}
 }
