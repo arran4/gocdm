@@ -14,6 +14,8 @@ import (
 	"github.com/arran4/gocdm/x11"
 )
 
+var version = "dev"
+
 func main() {
 	run(os.Args[1:], os.Exit)
 }
@@ -23,6 +25,7 @@ func run(args []string, exit func(int)) {
 	configPathFlag := fs.String("config", "", "Path to config file")
 	dryRun := fs.Bool("dry-run", false, "Dry run mode (print command instead of executing)")
 	forceMenu := fs.Bool("menu", false, "Force menu display even if only one session is found")
+	showVersion := fs.Bool("version", false, "Show version information")
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -30,6 +33,12 @@ func run(args []string, exit func(int)) {
 		} else {
 			exit(2)
 		}
+		return
+	}
+
+	if *showVersion {
+		fmt.Printf("gocdm version %s\n", version)
+		exit(0)
 		return
 	}
 

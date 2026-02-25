@@ -25,6 +25,24 @@ func TestRunHelp(t *testing.T) {
 	}
 }
 
+func TestRunVersion(t *testing.T) {
+    exited := false
+    code := -1
+    mockExit := func(c int) {
+        exited = true
+        code = c
+    }
+
+    run([]string{"-version"}, mockExit)
+
+    if !exited {
+        t.Error("Expected exit(0) for -version, but did not exit")
+    }
+    if code != 0 {
+        t.Errorf("Expected exit code 0 for -version, got %d", code)
+    }
+}
+
 func TestRunDryRunNoSessions(t *testing.T) {
 	// Create temp home with no sessions
 	tmpHome, err := os.MkdirTemp("", "test_home")
