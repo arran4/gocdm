@@ -1,0 +1,165 @@
+name: Go CI/CD
+
+on:
+  push:
+    # Disable branch pushes to save minutes, as per request to "maintain" structure but avoid cost
+    branches-ignore:
+      - '**'
+    tags:
+      - 'v*'
+  pull_request:
+    # Disable PR runs to save minutes
+    branches-ignore:
+      - '**'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'lint-fix'
+        type: choice
+        options:
+        - 'lint-fix'
+        - 'build-test'
+        - 'release'
+      release_mode:
+        description: 'Release Mode (only for release action)'
+        required: false
+        default: 'snapshot'
+        type: choice
+        options:
+        - 'snapshot'
+        - 'release'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  lint-and-fmt:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v4
+        with:
+          go-version: 1.22.x
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.55.2
+      - name: Run go fix and go fmt
+        run: |
+          go fix ./...
+          go fmt ./...
+      - name: Check for changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! git diff --exit-code; then
+            echo "go fix or go fmt found changes."
+            if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ github.event.inputs.action }}" == "lint-fix" ]; then
+              # Create PR if manually triggered for lint-fix
+              git config --global user.email "actions@github.com"
+              git config --global user.name "GitHub Actions"
+              BRANCH_NAME="fix-lint-${{ github.run_id }}"
+              git checkout -b $BRANCH_NAME
+              git add .
+              git commit -m "fix: go fmt and go fix"
+              git push origin $BRANCH_NAME
+              gh pr create --title "fix: auto-linting" --body "Automated lint fixes triggered by workflow_dispatch" --base main --head $BRANCH_NAME
+            else
+              # Fail if not manual fix request
+              exit 1
+            fi
+          fi
+
+  build-and-test:
+    name: Build & Test on ${{ matrix.os }}
+    needs: lint-and-fmt
+    if: ${{ github.event.inputs.action != 'lint-fix' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go-version: [1.22.x]
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Build
+      run: go build -v ./...
+
+    - name: Test
+      run: go test -v ./...
+
+    - name: Vet
+      run: go vet ./...
+
+    - name: Build GoCDM Binary
+      run: |
+        mkdir -p build
+        go build -o build/gocdm ./cmd/gocdm
+
+    - name: Functional Verification
+      shell: bash
+      run: |
+        # Check if binary exists
+        if [ -f "./build/gocdm" ]; then
+          echo "Binary built successfully"
+        else
+          echo "Binary not found"
+          exit 1
+        fi
+
+    - name: Upload Binaries
+      if: github.event_name == 'release'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts-${{ matrix.os }}
+        path: build/gocdm*
+
+  release:
+    name: Release
+    needs: [build-and-test]
+    # Run on tag push (release workflow) OR manual dispatch 'release'
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'release') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+          version: latest
+          # If triggered by tag, it's a real release. If manual, enforce snapshot unless specified otherwise?
+          # User asked to "keep both options open" for manual dispatch.
+          # If action=release AND release_mode=release, run real release.
+          # Otherwise (default), snapshot.
+          # Tag trigger always runs real release.
+          args: >-
+            release --clean
+            ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.release_mode != 'release') && '--snapshot' || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

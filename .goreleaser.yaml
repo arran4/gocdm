@@ -1,9 +1,9 @@
 version: 2
-project_name: cdm
+project_name: gocdm
 builds:
-  - id: cdm
-    main: ./cmd/cdm
-    binary: cdm
+  - id: gocdm
+    main: ./cmd/gocdm
+    binary: gocdm
     env:
       - CGO_ENABLED=0
     goos:
