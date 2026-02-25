@@ -1,12 +1,12 @@
-# CDM
+# GoCDM
 
-The Console Display Manager
+The Console Display Manager (Go Port)
 
 ## Invocation
 
-To run CDM, use `cdm [RCFILE]`.
+To run GoCDM, use `gocdm [RCFILE]`.
 
-CDM tries to source configuration files in the following order, and uses
+GoCDM tries to source configuration files in the following order, and uses
 the first found configuration:
 
 * [RCFILE] (direct input)
@@ -14,8 +14,8 @@ the first found configuration:
 * `$XDG_CONFIG_HOME/cdm/cdmrc`
 * `/etc/cdmrc`
 
-To autostart cdm when you log in your account, copy the content of
-/usr/share/doc/cdm/profile.sh to the tail of your shell profile (~/.profile,
+To autostart gocdm when you log in your account, copy the content of
+/usr/share/doc/gocdm/profile.sh to the tail of your shell profile (~/.profile,
 etc.).
 
 ## Customisation

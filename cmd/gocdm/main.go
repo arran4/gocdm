@@ -83,7 +83,7 @@ func main() {
 
 	// Normalize flag
 	flag := strings.ToUpper(selectedSession.Type)
-	// cdm script: [Cc] -> Console, [Xx] -> X.
+	// gocdm script: [Cc] -> Console, [Xx] -> X.
 	if strings.HasPrefix(flag, "C") {
 		flag = "C"
 	} else if strings.HasPrefix(flag, "X") {
@@ -108,7 +108,7 @@ func main() {
 		}
 
 		env := os.Environ()
-		env = append(env, fmt.Sprintf("CDM_SPAWN=%d", os.Getpid()))
+		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
 		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
