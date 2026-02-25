@@ -1,60 +1,62 @@
 package ui
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
 	"testing"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
 )
 
 func TestShowMenu(t *testing.T) {
-	// Mock execCommand
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		return cmd
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("Failed to init simulation screen: %v", err)
 	}
+	// Inject the simulation screen into ShowMenu
+	testScreen = s
+	defer func() { testScreen = nil }()
 
-	idx, err := ShowMenu("Title", []string{"A", "B"}, 0, "")
+	// Because ShowMenu blocks, we need to inject key presses concurrently
+	go func() {
+		// Give the app a moment to start
+		time.Sleep(100 * time.Millisecond)
+
+		// Simulate pressing Enter to select the first item
+		s.InjectKey(tcell.KeyEnter, ' ', tcell.ModNone)
+	}()
+
+	// Call ShowMenu
+	// Options: "Option A", "Option B"
+	// StartIdx: 0
+	// Theme: ""
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, 0, "")
 	if err != nil {
-		t.Fatalf("ShowMenu failed: %v", err)
+		t.Fatalf("ShowMenu returned error: %v", err)
 	}
+
 	if idx != 0 {
 		t.Errorf("Expected index 0, got %d", idx)
 	}
 }
 
-func TestHelperProcess(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
+func TestShowMenuCancel(t *testing.T) {
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("Failed to init simulation screen: %v", err)
 	}
-	defer os.Exit(0)
+	testScreen = s
+	defer func() { testScreen = nil }()
 
-	args := os.Args
-	for len(args) > 0 {
-		if args[0] == "--" {
-			args = args[1:]
-			break
-		}
-		args = args[1:]
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		s.InjectKey(tcell.KeyEscape, ' ', tcell.ModNone)
+	}()
+
+	_, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, 0, "")
+	if err == nil {
+		t.Fatal("Expected error for cancelled menu, got nil")
 	}
-
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "No command\n")
-		os.Exit(2)
+	if err.Error() != "cancelled" {
+		t.Errorf("Expected 'cancelled' error, got '%v'", err)
 	}
-
-	cmd, args := args[0], args[1:]
-	if cmd != "dialog" {
-		fmt.Fprintf(os.Stderr, "Expected command dialog, got %s\n", cmd)
-		os.Exit(2)
-	}
-
-	// Output simulated selection (index 0)
-	fmt.Print("0")
 }

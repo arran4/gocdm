@@ -2,58 +2,84 @@ package ui
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-	"strconv"
-	"strings"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 )
 
-var execCommand = exec.Command
+// testScreen is used for testing to inject a simulation screen.
+var testScreen tcell.Screen
 
-// ShowMenu displays a menu using the dialog command.
+// ShowMenu displays a menu using tview.
 // options is a slice of option names.
 // startIdx is the index to start numbering options.
-// theme is the path to the dialogrc file.
+// theme is the path to the dialogrc file (currently ignored).
 // Returns the index of the selected option (0-based relative to options), or error.
 func ShowMenu(title string, options []string, startIdx int, theme string) (int, error) {
-	// Construct the menu arguments
-	menuArgs := []string{}
+	app := tview.NewApplication()
+	if testScreen != nil {
+		app.SetScreen(testScreen)
+	}
+
+	list := tview.NewList()
+	list.ShowSecondaryText(false).
+		SetSelectedBackgroundColor(tcell.ColorDarkBlue).
+		SetSelectedTextColor(tcell.ColorWhite)
+	list.SetTitle(fmt.Sprintf(" %s ", title)).
+		SetTitleAlign(tview.AlignCenter)
+
+	list.SetBorder(true)
+
 	for i, opt := range options {
-		menuArgs = append(menuArgs, strconv.Itoa(i+startIdx), opt)
+		// Prepend index to match dialog look
+		itemText := fmt.Sprintf("%d %s", i+startIdx, opt)
+		list.AddItem(itemText, "", 0, nil)
 	}
 
-	args := []string{
-		"--colors", "--stdout",
-		"--backtitle", title,
-		"--ok-label", " Select ",
-		"--cancel-label", " Exit ",
-		"--menu", "Select session", "0", "0", "0",
+	// Calculate height based on options, max out at 20 or screen height - padding
+	height := len(options) + 4 // +2 for border, +2 for margin? Just +2 for border usually.
+	if height > 20 {
+		height = 20
 	}
-	args = append(args, menuArgs...)
+	width := 60
 
-	cmd := execCommand("dialog", args...)
-	cmd.Stderr = os.Stderr // dialog uses stderr for the TUI
+	// Center the list
+	flex := tview.NewFlex().
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(nil, 0, 1, false).
+			AddItem(list, height, 1, true).
+			AddItem(nil, 0, 1, false), width, 1, true).
+		AddItem(nil, 0, 1, false)
 
-	if theme != "" {
-		cmd.Env = append(os.Environ(), "DIALOGRC="+theme)
-	}
+	var selectedIdx = -1
+	var selectionError error
 
-	output, err := cmd.Output()
-	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
-			// dialog returns 1 on Cancel/Esc
-			if exitError.ExitCode() == 1 {
-				return -1, fmt.Errorf("cancelled")
-			}
+	list.SetSelectedFunc(func(index int, mainText string, secondaryText string, shortcut rune) {
+		selectedIdx = index
+		app.Stop()
+	})
+
+	list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyEscape {
+			selectionError = fmt.Errorf("cancelled")
+			app.Stop()
+			return nil
 		}
-		return -1, fmt.Errorf("dialog command failed: %w", err)
+		return event
+	})
+
+	if err := app.SetRoot(flex, true).Run(); err != nil {
+		return -1, err
 	}
 
-	selectedStr := strings.TrimSpace(string(output))
-	selectedIdx, err := strconv.Atoi(selectedStr)
-	if err != nil {
-		return -1, fmt.Errorf("invalid output from dialog: %s", selectedStr)
+	if selectionError != nil {
+		return -1, selectionError
 	}
 
-	return selectedIdx - startIdx, nil
+	if selectedIdx == -1 {
+		return -1, fmt.Errorf("cancelled")
+	}
+
+	return selectedIdx, nil
 }
