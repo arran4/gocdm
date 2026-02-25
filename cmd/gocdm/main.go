@@ -70,15 +70,17 @@ func main() {
 		selectedIdx = 0
 	} else {
 		optionNames := make([]string, len(sessions))
+		details := make([]string, len(sessions))
 		defaultIdx := 0
 		for i, s := range sessions {
 			optionNames[i] = s.Name
+			details[i] = fmt.Sprintf("Name: %s\nExec: %s\nType: %s\nPath: %s", s.Name, s.Exec, s.Type, s.Path)
 			if s.Name == state.LastSession {
 				defaultIdx = i
 			}
 		}
 
-		idx, err := ui.ShowMenu("Console Display Manager", optionNames, cfg.CountFrom, defaultIdx, cfg.DialogRC)
+		idx, err := ui.ShowMenu("Console Display Manager", optionNames, details, cfg.CountFrom, defaultIdx, cfg.DialogRC)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Selection cancelled or error: %v\n", err)
 			os.Exit(2)

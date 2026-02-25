@@ -30,7 +30,7 @@ func TestShowMenu(t *testing.T) {
 	// StartIdx: 0
 	// DefaultIdx: 0
 	// Theme: ""
-	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, 0, 0, "")
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, "")
 	if err != nil {
 		t.Fatalf("ShowMenu returned error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestShowMenuDefaultSelection(t *testing.T) {
 	}()
 
 	// DefaultIdx: 1
-	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, 0, 1, "")
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 1, "")
 	if err != nil {
 		t.Fatalf("ShowMenu returned error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestShowMenuCancel(t *testing.T) {
 		s.InjectKey(tcell.KeyEscape, ' ', tcell.ModNone)
 	}()
 
-	_, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, 0, 0, "")
+	_, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, "")
 	if err == nil {
 		t.Fatal("Expected error for cancelled menu, got nil")
 	}

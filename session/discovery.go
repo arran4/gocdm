@@ -20,6 +20,7 @@ type Session struct {
 	Name string
 	Exec string
 	Type string // "X", "C", or "W" (Wayland)
+	Path string
 }
 
 func DiscoverSessions(userHome string) ([]Session, error) {
@@ -108,6 +109,7 @@ func discoverUserSessions(home string) ([]Session, error) {
 				Name: name,
 				Exec: path,
 				Type: "X",
+				Path: path,
 			})
 		}
 	}
@@ -146,10 +148,12 @@ func discoverX11Sessions() ([]Session, error) {
 	var sessions []Session
 	for _, entry := range entries {
 		if !entry.IsDir() {
+			path := filepath.Join(dir, entry.Name())
 			sessions = append(sessions, Session{
 				Name: entry.Name(),
-				Exec: filepath.Join(dir, entry.Name()),
+				Exec: path,
 				Type: "X",
+				Path: path,
 			})
 		}
 	}
@@ -215,5 +219,6 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 		Name: name,
 		Exec: execCmd,
 		Type: defaultType,
+		Path: path,
 	}, nil
 }

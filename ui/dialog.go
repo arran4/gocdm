@@ -12,11 +12,12 @@ var testScreen tcell.Screen
 
 // ShowMenu displays a menu using tview.
 // options is a slice of option names.
+// details is a slice of detail strings corresponding to options (optional, can be nil).
 // startIdx is the index to start numbering options.
 // defaultIdx is the index of the option to pre-select.
 // theme is the path to the dialogrc file (currently ignored).
 // Returns the index of the selected option (0-based relative to options), or error.
-func ShowMenu(title string, options []string, startIdx int, defaultIdx int, theme string) (int, error) {
+func ShowMenu(title string, options []string, details []string, startIdx int, defaultIdx int, theme string) (int, error) {
 	app := tview.NewApplication()
 	if testScreen != nil {
 		app.SetScreen(testScreen)
@@ -70,6 +71,20 @@ func ShowMenu(title string, options []string, startIdx int, defaultIdx int, them
 			selectionError = fmt.Errorf("cancelled")
 			app.Stop()
 			return nil
+		}
+		if event.Rune() == '?' {
+			idx := list.GetCurrentItem()
+			if details != nil && idx >= 0 && idx < len(details) {
+				detailText := details[idx]
+				modal := tview.NewModal().
+					SetText(detailText).
+					AddButtons([]string{"OK"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						app.SetRoot(flex, true)
+					})
+				app.SetRoot(modal, false)
+				return nil
+			}
 		}
 		return event
 	})
