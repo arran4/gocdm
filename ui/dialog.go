@@ -13,9 +13,10 @@ var testScreen tcell.Screen
 // ShowMenu displays a menu using tview.
 // options is a slice of option names.
 // startIdx is the index to start numbering options.
+// defaultIdx is the index of the option to pre-select.
 // theme is the path to the dialogrc file (currently ignored).
 // Returns the index of the selected option (0-based relative to options), or error.
-func ShowMenu(title string, options []string, startIdx int, theme string) (int, error) {
+func ShowMenu(title string, options []string, startIdx int, defaultIdx int, theme string) (int, error) {
 	app := tview.NewApplication()
 	if testScreen != nil {
 		app.SetScreen(testScreen)
@@ -34,6 +35,10 @@ func ShowMenu(title string, options []string, startIdx int, theme string) (int, 
 		// Prepend index to match dialog look
 		itemText := fmt.Sprintf("%d %s", i+startIdx, opt)
 		list.AddItem(itemText, "", 0, nil)
+	}
+
+	if defaultIdx >= 0 && defaultIdx < len(options) {
+		list.SetCurrentItem(defaultIdx)
 	}
 
 	// Calculate height based on options, max out at 20 or screen height - padding

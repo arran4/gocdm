@@ -25,10 +25,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Load state (last session)
+	state, err := config.LoadState()
+	if err != nil {
+		// Ignore error, just start fresh
+		state = &config.State{}
+	}
+
 	// Populate sessions if binlist is empty
 	var sessions []session.Session
 	if len(cfg.BinList) == 0 {
-		sessions, err = session.DiscoverSessions()
+		home, _ := os.UserHomeDir()
+		sessions, err = session.DiscoverSessions(home)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error discovering sessions: %v\n", err)
 			os.Exit(1)
@@ -62,11 +70,15 @@ func main() {
 		selectedIdx = 0
 	} else {
 		optionNames := make([]string, len(sessions))
+		defaultIdx := 0
 		for i, s := range sessions {
 			optionNames[i] = s.Name
+			if s.Name == state.LastSession {
+				defaultIdx = i
+			}
 		}
 
-		idx, err := ui.ShowMenu("Console Display Manager", optionNames, cfg.CountFrom, cfg.DialogRC)
+		idx, err := ui.ShowMenu("Console Display Manager", optionNames, cfg.CountFrom, defaultIdx, cfg.DialogRC)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Selection cancelled or error: %v\n", err)
 			os.Exit(2)
@@ -81,18 +93,25 @@ func main() {
 
 	selectedSession := sessions[selectedIdx]
 
+	// Save state
+	if err := config.SaveState(selectedSession.Name); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
+	}
+
 	// Normalize flag
 	flag := strings.ToUpper(selectedSession.Type)
 	// gocdm script: [Cc] -> Console, [Xx] -> X.
 	if strings.HasPrefix(flag, "C") {
 		flag = "C"
+	} else if strings.HasPrefix(flag, "W") {
+		flag = "C" // Treat Wayland as Console/Command
 	} else if strings.HasPrefix(flag, "X") {
 		flag = "X"
 	}
 
 	switch flag {
 	case "C":
-		// Console program
+		// Console program (and Wayland)
 		parts := strings.Fields(selectedSession.Exec)
 		if len(parts) == 0 {
 			fmt.Fprintln(os.Stderr, "Empty command")
