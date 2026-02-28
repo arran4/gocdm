@@ -97,6 +97,10 @@ func GetVT(xtty string, display int) (string, error) {
 // startXLog: path to log file.
 // serverArgs: additional arguments for X server.
 func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTimeout int, altStartX bool, startXLog string, serverArgs []string, env []string) error {
+	if err := SwitchVT(vt); err != nil {
+		return fmt.Errorf("failed VT handoff before launching X session: %w", err)
+	}
+
 	// Construct X server arguments
 	// e.g. :0 -nolisten tcp vt7
 	xArgs := []string{fmt.Sprintf(":%d", display)}
