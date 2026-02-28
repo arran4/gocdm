@@ -44,7 +44,7 @@
     - [x] Update `TODO.md`
 
 - [ ] Gap Analysis / Missing Features
-    - [ ] Support legacy `dialogrc` themes in `ui/dialog.go`
+    - [x] Support legacy `dialogrc` themes in `ui/dialog.go` (Parser complete, UI hook up pending)
     - [x] Fully implement ConsoleKit monitoring in `x11/x11.go`
 
 - [ ] Increase Test Coverage
