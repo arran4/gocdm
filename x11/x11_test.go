@@ -75,6 +75,10 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	}
 	if cmd == "chvt" {
+		if os.Getenv("MOCK_CHVT_FAIL") == "1" {
+			fmt.Fprintln(os.Stderr, "chvt failed")
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	if cmd == "tty" {
@@ -145,6 +149,30 @@ func TestLaunchXSession(t *testing.T) {
 	err = LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"}, nil)
 	if err != nil {
 		t.Fatalf("LaunchXSession failed: %v", err)
+	}
+}
+
+func TestLaunchXSessionSwitchVTFailure(t *testing.T) {
+	origExecCommand := execCommand
+	defer func() { execCommand = origExecCommand }()
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", "MOCK_CHVT_FAIL=1")
+		return cmd
+	}
+
+	tmpLog, err := os.CreateTemp("", "startx_log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpLog.Name())
+
+	err = LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"}, nil)
+	if err == nil {
+		t.Fatal("expected LaunchXSession to fail when VT handoff fails")
 	}
 }
 
