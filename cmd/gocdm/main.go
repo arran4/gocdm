@@ -8,7 +8,6 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/arran4/gocdm/auth"
 	"github.com/arran4/gocdm/config"
@@ -218,7 +217,7 @@ func run(args []string, exit func(int)) {
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 		env = append(env, "XDG_SESSION_TYPE=wayland")
 
-		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
+		if err := execProgram(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
 			return
@@ -257,7 +256,7 @@ func run(args []string, exit func(int)) {
 		env := append([]string{}, sessionEnv...)
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
-		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
+		if err := execProgram(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
 			return
@@ -391,10 +390,10 @@ func dropPrivileges(username string) error {
 		return fmt.Errorf("invalid gid %q: %w", u.Gid, err)
 	}
 
-	if err := syscall.Setgid(gid); err != nil {
+	if err := setGroupID(gid); err != nil {
 		return fmt.Errorf("setgid %d: %w", gid, err)
 	}
-	if err := syscall.Setuid(uid); err != nil {
+	if err := setUserID(uid); err != nil {
 		return fmt.Errorf("setuid %d: %w", uid, err)
 	}
 	return nil
