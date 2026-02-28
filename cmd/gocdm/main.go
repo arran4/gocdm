@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"strconv"
 	"strings"
 	"syscall"
 
+	"github.com/arran4/gocdm/auth"
 	"github.com/arran4/gocdm/config"
 	"github.com/arran4/gocdm/dialog"
 	"github.com/arran4/gocdm/session"
@@ -29,6 +31,8 @@ func run(args []string, exit func(int)) {
 	dryRun := fs.Bool("dry-run", false, "Dry run mode (print command instead of executing)")
 	forceMenu := fs.Bool("menu", false, "Force menu display even if only one session is found")
 	showVersion := fs.Bool("version", false, "Show version information")
+	loginMode := fs.Bool("login", false, "Prompt for username/password and authenticate with PAM")
+	pamService := fs.String("pam-service", "login", "PAM service name used with -login")
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -141,6 +145,22 @@ func run(args []string, exit func(int)) {
 	}
 
 	username := currentUsername()
+	if *loginMode {
+		authenticator := auth.NewPAMAuthenticator(*pamService)
+		promptedUser, password, err := auth.PromptCredentials(os.Stdin, os.Stdout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Authentication prompt failed: %v\n", err)
+			exit(1)
+			return
+		}
+		if err := authenticator.Authenticate(promptedUser, password); err != nil {
+			fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
+			exit(1)
+			return
+		}
+		username = promptedUser
+	}
+
 	sessionEnv, err := config.BuildSessionEnv(os.Environ(), username, "/etc/passwd", "/etc/security/pam_env.conf")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to build secure session environment: %v\n", err)
@@ -179,6 +199,13 @@ func run(args []string, exit func(int)) {
 			fmt.Printf("Dry run: would execute Wayland program: %s %v\n", bin, args)
 			return
 		}
+		if *loginMode {
+			if err := dropPrivileges(username); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
+				exit(1)
+				return
+			}
+		}
 
 		binary, err := exec.LookPath(bin)
 		if err != nil {
@@ -211,6 +238,13 @@ func run(args []string, exit func(int)) {
 		if *dryRun {
 			fmt.Printf("Dry run: would execute console program: %s %v\n", bin, args)
 			return
+		}
+		if *loginMode {
+			if err := dropPrivileges(username); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
+				exit(1)
+				return
+			}
 		}
 
 		binary, err := exec.LookPath(bin)
@@ -294,6 +328,13 @@ func run(args []string, exit func(int)) {
 			fmt.Printf("X server args: %v\n", cfg.ServerArgs)
 			return
 		}
+		if *loginMode {
+			if err := dropPrivileges(username); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
+				exit(1)
+				return
+			}
+		}
 
 		err = x11.LaunchXSession(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, sessionEnv)
 		if err != nil {
@@ -325,6 +366,36 @@ func validateTTY(dryRun bool) error {
 	}
 	if !isTerminal(int(os.Stdin.Fd())) || !isTerminal(int(os.Stdout.Fd())) || !isTerminal(int(os.Stderr.Fd())) {
 		return fmt.Errorf("gocdm must be launched from an interactive TTY")
+	}
+	return nil
+}
+
+func dropPrivileges(username string) error {
+	if username == "" {
+		return fmt.Errorf("username is required for privilege drop")
+	}
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("-login requires root privileges to change credentials")
+	}
+
+	u, err := user.Lookup(username)
+	if err != nil {
+		return fmt.Errorf("lookup user %q: %w", username, err)
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return fmt.Errorf("invalid uid %q: %w", u.Uid, err)
+	}
+	gid, err := strconv.Atoi(u.Gid)
+	if err != nil {
+		return fmt.Errorf("invalid gid %q: %w", u.Gid, err)
+	}
+
+	if err := syscall.Setgid(gid); err != nil {
+		return fmt.Errorf("setgid %d: %w", gid, err)
+	}
+	if err := syscall.Setuid(uid); err != nil {
+		return fmt.Errorf("setuid %d: %w", uid, err)
 	}
 	return nil
 }

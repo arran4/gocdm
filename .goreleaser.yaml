@@ -1,5 +1,6 @@
 version: 2
 project_name: gocdm
+
 builds:
   - id: gocdm
     main: ./cmd/gocdm
@@ -12,8 +13,23 @@ builds:
       - amd64
       - arm64
 
+  - id: gocdm-pam
+    main: ./cmd/gocdm
+    binary: gocdm-pam
+    flags:
+      - -tags=pam
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+
 archives:
-  - format: tar.gz
+  - id: gocdm
+    ids:
+      - gocdm
+    format: tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
@@ -28,10 +44,30 @@ archives:
       - src: themes
         dst: themes
 
+  - id: gocdm-pam
+    ids:
+      - gocdm-pam
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_pam_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - license.txt
+      - README.md
+      - profile.sh
+      - src: themes
+        dst: themes
+
 checksum:
   name_template: 'checksums.txt'
+
 snapshot:
   name_template: "{{ .Tag }}-next"
+
 changelog:
   sort: asc
   filters:
