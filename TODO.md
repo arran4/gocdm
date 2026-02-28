@@ -44,7 +44,7 @@
     - [x] Update `TODO.md`
 
 - [ ] Gap Analysis / Missing Features
-    - [x] Support legacy `dialogrc` themes in `dialog` package (Parser complete, UI hook up pending)
+    - [x] Support legacy `dialogrc` themes in `dialog` package
     - [x] Fully implement ConsoleKit monitoring in `x11/x11.go`
     - [ ] Make GoCDM a standalone `getty` replacement.
         - [ ] Integrate PAM for native user authentication (username/password prompting).
@@ -52,7 +52,7 @@
         - [ ] Read and set environment variables securely from `/etc/passwd` and `/etc/security/pam_env.conf`.
     - [ ] Implement `locktty=yes` feature from legacy CDM (switch to existing X11 VT if already running).
     - [ ] Fully support Freedesktop.org `.desktop` Exec variables parsing (e.g. `%f`, `%u`).
-    - [ ] Isolate the UI mapping logic for `dialogrc` colors to `tview` colors.
+    - [x] Isolate the UI mapping logic for `dialogrc` colors to `tview` colors.
 
 - [ ] Increase Test Coverage
     - [x] `config/state.go` tests (`TestLoadState`, `TestSaveState`)
