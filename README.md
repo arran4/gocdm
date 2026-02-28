@@ -20,25 +20,64 @@ etc.).
 
 ## Using GoCDM as a getty replacement (Login Manager)
 
-Currently, GoCDM operates as a display manager *after* a user has already logged in to a TTY (by sourcing it in `.profile` or `.bash_profile`). It does not yet include PAM integration or user authentication out of the box to fully replace `getty` or `login`.
+GoCDM can run in login-manager mode with native username/password prompts and PAM authentication.
 
-When launching sessions, GoCDM now derives identity environment variables (`HOME`, `SHELL`, `USER`, `LOGNAME`) from `/etc/passwd` and applies values from `/etc/security/pam_env.conf` (`DEFAULT=` and `OVERRIDE=` entries) before exec'ing the selected session.
+### Installation
 
-However, you can achieve a pseudo-getty autologin setup by configuring your init system (e.g., systemd) to auto-login your user on a specific TTY, and then have your shell profile immediately launch GoCDM.
+Build and install the standard binary:
 
-1. Create a drop-in systemd override for `getty@tty1.service`:
-   ```bash
-   sudo systemctl edit getty@tty1.service
-   ```
-2. Add the following lines to autologin your user (replace `username`):
-   ```ini
-   [Service]
-   ExecStart=
-   ExecStart=-/sbin/agetty -o '-p -f -- \\u' --noclear --autologin username %I $TERM
-   ```
-3. Ensure GoCDM is invoked in your user's `~/.profile` or `~/.bash_profile`.
+```bash
+go build -o gocdm ./cmd/gocdm
+sudo install -m 0755 gocdm /usr/local/bin/gocdm
+```
 
-*Note: Fully replacing `getty` standalone by integrating PAM directly into GoCDM is currently tracked as a future feature in `TODO.md`.*
+Build and install the PAM-enabled binary:
+
+```bash
+go build -tags pam -o gocdm-pam ./cmd/gocdm
+sudo install -m 0755 gocdm-pam /usr/local/bin/gocdm
+```
+
+In login mode, GoCDM authenticates credentials through PAM, prepares a sanitized session environment (`HOME`, `SHELL`, `USER`, `LOGNAME`, plus `/etc/security/pam_env.conf`), and drops privileges to the authenticated account before launching the selected session.
+
+### RC/profile autostart setup (user session)
+
+If you want GoCDM to start after a normal shell login, append this to `~/.profile` (or `~/.bash_profile`):
+
+```sh
+if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
+  exec /usr/local/bin/gocdm
+fi
+```
+
+### systemd getty replacement setup (login-manager mode)
+
+To run GoCDM directly from tty1 under systemd, override `getty@tty1.service`:
+
+```bash
+sudo systemctl edit getty@tty1.service
+```
+
+Use this override:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=-/usr/local/bin/gocdm -login -pam-service login
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+```
+
+Then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart getty@tty1.service
+```
 
 ## Customisation
 
