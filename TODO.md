@@ -45,7 +45,7 @@
 
 - [ ] Gap Analysis / Missing Features
     - [ ] Support legacy `dialogrc` themes in `ui/dialog.go`
-    - [ ] Fully implement ConsoleKit monitoring in `x11/x11.go`
+    - [x] Fully implement ConsoleKit monitoring in `x11/x11.go`
 
 - [ ] Increase Test Coverage
     - [x] `config/state.go` tests (`TestLoadState`, `TestSaveState`)
@@ -53,3 +53,5 @@
     - [x] `session/discovery.go` tests (cover `parseDesktopFile` errors)
     - [x] `ui/dialog.go` tests (cover details modal `?` key)
     - [x] `cmd/gocdm/main.go` tests (mock execution and flags)
+
+- [ ] Support C bindings (ideally using github.com/ebitengine/purego instead of cgo if strictly necessary)
