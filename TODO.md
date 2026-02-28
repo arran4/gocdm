@@ -51,7 +51,7 @@
         - [ ] Manage TTY allocation and session handoffs directly (replacing `login`/`agetty`).
         - [ ] Read and set environment variables securely from `/etc/passwd` and `/etc/security/pam_env.conf`.
     - [ ] Implement `locktty=yes` feature from legacy CDM (switch to existing X11 VT if already running).
-    - [ ] Fully support Freedesktop.org `.desktop` Exec variables parsing (e.g. `%f`, `%u`).
+    - [x] Fully support Freedesktop.org `.desktop` Exec variables parsing (e.g. `%f`, `%u`).
     - [x] Isolate the UI mapping logic for `dialogrc` colors to `tview` colors.
 
 - [ ] Increase Test Coverage
@@ -60,6 +60,6 @@
     - [x] `session/discovery.go` tests (cover `parseDesktopFile` errors)
     - [x] `dialog/dialog.go` tests (cover details modal `?` key)
     - [x] `cmd/gocdm/main.go` tests (mock execution and flags)
-    - [ ] Source additional `.dialogrc` examples into `dialog/testdata/todo/` for testing edge case parser scenarios.
+    - [x] Source additional `.dialogrc` examples into `dialog/testdata/todo/` for testing edge case parser scenarios.
 
 - [ ] Support C bindings (ideally using github.com/ebitengine/purego instead of cgo if strictly necessary)

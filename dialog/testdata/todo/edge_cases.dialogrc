@@ -1,0 +1,27 @@
+# Edge cases and malformed lines
+
+# Missing equal sign
+broken_line_no_equal
+
+# Empty value
+empty_val =
+
+# Whitespace handling
+  padded_key   =   (RED, GREEN, ON)
+
+# Incomplete attributes
+attr_one = (RED)
+attr_two = (RED, BLUE)
+attr_empty = ()
+
+# Invalid boolean
+bad_bool = MAYBE
+
+# Invalid number
+bad_number = 123a
+
+# Missing trailing parenthesis
+unclosed_attr = (RED,BLUE,ON
+
+# Quoted string with whitespace
+string_val = "  hello world  "

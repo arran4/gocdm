@@ -160,3 +160,23 @@ func TestParseDesktopFileErrors(t *testing.T) {
 		t.Error("Expected error for missing Exec binary")
 	}
 }
+
+func TestStripFreedesktopExecVariables(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"gnome-session %U", "gnome-session"},
+		{"sway %f", "sway"},
+		{"startplasma-wayland %i %c", "startplasma-wayland"},
+		{"/usr/bin/some-wm --arg %F %u %k", "/usr/bin/some-wm --arg"},
+		{"/bin/sh -c 'exec xterm'", "/bin/sh -c 'exec xterm'"}, // no vars
+	}
+
+	for _, c := range cases {
+		got := stripFreedesktopExecVariables(c.input)
+		if got != c.expected {
+			t.Errorf("stripFreedesktopExecVariables(%q) = %q; expected %q", c.input, got, c.expected)
+		}
+	}
+}

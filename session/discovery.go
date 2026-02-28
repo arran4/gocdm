@@ -168,6 +168,19 @@ func discoverWaylandSessions() ([]Session, error) {
 	return discoverCustomSessions(WaylandSessionsDir, "W")
 }
 
+// stripFreedesktopExecVariables removes Freedesktop Exec field codes from the command line.
+// Some window managers or display managers specify %f, %u, etc., in their .desktop files.
+// For a display manager, we generally want to remove these or ignore them.
+func stripFreedesktopExecVariables(execCmd string) string {
+	vars := []string{"%f", "%F", "%u", "%U", "%i", "%c", "%k"}
+	for _, v := range vars {
+		execCmd = strings.ReplaceAll(execCmd, v, "")
+	}
+	// Clean up any double spaces that might have been left behind
+	execCmd = strings.Join(strings.Fields(execCmd), " ")
+	return execCmd
+}
+
 func parseDesktopFile(path string, defaultType string) (Session, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -192,6 +205,8 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 	if execCmd == "" || name == "" {
 		return Session{}, fmt.Errorf("missing Exec or Name")
 	}
+
+	execCmd = stripFreedesktopExecVariables(execCmd)
 
 	// Check TryExec if present
 	if tryExec != "" {
