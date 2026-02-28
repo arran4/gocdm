@@ -6,9 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/arran4/gocdm/auth"
 	"github.com/arran4/gocdm/config"
@@ -218,7 +216,7 @@ func run(args []string, exit func(int)) {
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 		env = append(env, "XDG_SESSION_TYPE=wayland")
 
-		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
+		if err := execProgram(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
 			return
@@ -257,7 +255,7 @@ func run(args []string, exit func(int)) {
 		env := append([]string{}, sessionEnv...)
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
-		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
+		if err := execProgram(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
 			return
@@ -366,36 +364,6 @@ func validateTTY(dryRun bool) error {
 	}
 	if !isTerminal(int(os.Stdin.Fd())) || !isTerminal(int(os.Stdout.Fd())) || !isTerminal(int(os.Stderr.Fd())) {
 		return fmt.Errorf("gocdm must be launched from an interactive TTY")
-	}
-	return nil
-}
-
-func dropPrivileges(username string) error {
-	if username == "" {
-		return fmt.Errorf("username is required for privilege drop")
-	}
-	if os.Geteuid() != 0 {
-		return fmt.Errorf("-login requires root privileges to change credentials")
-	}
-
-	u, err := user.Lookup(username)
-	if err != nil {
-		return fmt.Errorf("lookup user %q: %w", username, err)
-	}
-	uid, err := strconv.Atoi(u.Uid)
-	if err != nil {
-		return fmt.Errorf("invalid uid %q: %w", u.Uid, err)
-	}
-	gid, err := strconv.Atoi(u.Gid)
-	if err != nil {
-		return fmt.Errorf("invalid gid %q: %w", u.Gid, err)
-	}
-
-	if err := syscall.Setgid(gid); err != nil {
-		return fmt.Errorf("setgid %d: %w", gid, err)
-	}
-	if err := syscall.Setuid(uid); err != nil {
-		return fmt.Errorf("setuid %d: %w", uid, err)
 	}
 	return nil
 }
