@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"strconv"
 	"strings"
 
 	"github.com/arran4/gocdm/auth"
@@ -365,36 +364,6 @@ func validateTTY(dryRun bool) error {
 	}
 	if !isTerminal(int(os.Stdin.Fd())) || !isTerminal(int(os.Stdout.Fd())) || !isTerminal(int(os.Stderr.Fd())) {
 		return fmt.Errorf("gocdm must be launched from an interactive TTY")
-	}
-	return nil
-}
-
-func dropPrivileges(username string) error {
-	if username == "" {
-		return fmt.Errorf("username is required for privilege drop")
-	}
-	if os.Geteuid() != 0 {
-		return fmt.Errorf("-login requires root privileges to change credentials")
-	}
-
-	u, err := user.Lookup(username)
-	if err != nil {
-		return fmt.Errorf("lookup user %q: %w", username, err)
-	}
-	uid, err := strconv.Atoi(u.Uid)
-	if err != nil {
-		return fmt.Errorf("invalid uid %q: %w", u.Uid, err)
-	}
-	gid, err := strconv.Atoi(u.Gid)
-	if err != nil {
-		return fmt.Errorf("invalid gid %q: %w", u.Gid, err)
-	}
-
-	if err := setGroupID(gid); err != nil {
-		return fmt.Errorf("setgid %d: %w", gid, err)
-	}
-	if err := setUserID(uid); err != nil {
-		return fmt.Errorf("setuid %d: %w", uid, err)
 	}
 	return nil
 }
