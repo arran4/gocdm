@@ -1,10 +1,10 @@
 package session
 
 import (
+	_ "embed"
 	"os"
 	"path/filepath"
 	"testing"
-	_ "embed"
 )
 
 //go:embed testdata/missing_exec.desktop
