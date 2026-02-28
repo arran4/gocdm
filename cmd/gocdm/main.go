@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"strings"
 	"syscall"
 
@@ -131,6 +132,12 @@ func run(args []string, exit func(int)) {
 	}
 
 	selectedSession := sessions[selectedIdx]
+	username := currentUsername()
+	sessionEnv, err := config.BuildSessionEnv(os.Environ(), username, "/etc/passwd", "/etc/security/pam_env.conf")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to build secure session environment: %v\n", err)
+		sessionEnv = os.Environ()
+	}
 
 	// Save state
 	if err := config.SaveState(selectedSession.Name); err != nil {
@@ -172,7 +179,7 @@ func run(args []string, exit func(int)) {
 			return
 		}
 
-		env := os.Environ()
+		env := append([]string{}, sessionEnv...)
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 		env = append(env, "XDG_SESSION_TYPE=wayland")
 
@@ -205,7 +212,7 @@ func run(args []string, exit func(int)) {
 			return
 		}
 
-		env := os.Environ()
+		env := append([]string{}, sessionEnv...)
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
 		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
@@ -283,7 +290,7 @@ func run(args []string, exit func(int)) {
 			return
 		}
 
-		err = x11.LaunchXSession(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs)
+		err = x11.LaunchXSession(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, sessionEnv)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
 			exit(1)
@@ -295,4 +302,14 @@ func run(args []string, exit func(int)) {
 		exit(1)
 		return
 	}
+}
+
+func currentUsername() string {
+	if envUser := os.Getenv("USER"); envUser != "" {
+		return envUser
+	}
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	return ""
 }

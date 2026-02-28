@@ -142,7 +142,7 @@ func TestLaunchXSession(t *testing.T) {
 	}
 	defer os.Remove(tmpLog.Name())
 
-	err = LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"})
+	err = LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"}, nil)
 	if err != nil {
 		t.Fatalf("LaunchXSession failed: %v", err)
 	}
