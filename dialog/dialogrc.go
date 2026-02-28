@@ -1,4 +1,4 @@
-package ui
+package dialog
 
 import (
 	"bufio"

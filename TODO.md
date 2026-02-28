@@ -44,8 +44,9 @@
     - [x] Update `TODO.md`
 
 - [ ] Gap Analysis / Missing Features
-    - [x] Support legacy `dialogrc` themes in `ui/dialog.go` (Parser complete, UI hook up pending)
+    - [x] Support legacy `dialogrc` themes in `dialog` package (Parser complete, UI hook up pending)
     - [x] Fully implement ConsoleKit monitoring in `x11/x11.go`
+    - [ ] Make GoCDM a standalone `getty` replacement (e.g., support direct user authentication via PAM without needing `agetty` wrappers).
 
 - [ ] Increase Test Coverage
     - [x] `config/state.go` tests (`TestLoadState`, `TestSaveState`)
