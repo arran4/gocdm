@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 var execCommand = exec.Command
@@ -120,9 +119,7 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	// Create command
 	// We use Setsid to create a new session
 	cmd := execCommand("startx", cmdArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
-	}
+	cmd.SysProcAttr = newSysProcAttr()
 	if len(env) > 0 {
 		cmd.Env = append([]string{}, env...)
 	}
