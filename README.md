@@ -22,6 +22,8 @@ etc.).
 
 Currently, GoCDM operates as a display manager *after* a user has already logged in to a TTY (by sourcing it in `.profile` or `.bash_profile`). It does not yet include PAM integration or user authentication out of the box to fully replace `getty` or `login`.
 
+When launching sessions, GoCDM now derives identity environment variables (`HOME`, `SHELL`, `USER`, `LOGNAME`) from `/etc/passwd` and applies values from `/etc/security/pam_env.conf` (`DEFAULT=` and `OVERRIDE=` entries) before exec'ing the selected session.
+
 However, you can achieve a pseudo-getty autologin setup by configuring your init system (e.g., systemd) to auto-login your user on a specific TTY, and then have your shell profile immediately launch GoCDM.
 
 1. Create a drop-in systemd override for `getty@tty1.service`:

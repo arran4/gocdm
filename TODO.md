@@ -49,7 +49,7 @@
     - [ ] Make GoCDM a standalone `getty` replacement.
         - [ ] Integrate PAM for native user authentication (username/password prompting).
         - [ ] Manage TTY allocation and session handoffs directly (replacing `login`/`agetty`).
-        - [ ] Read and set environment variables securely from `/etc/passwd` and `/etc/security/pam_env.conf`.
+        - [x] Read and set environment variables securely from `/etc/passwd` and `/etc/security/pam_env.conf`.
     - [x] Implement `locktty=yes` feature from legacy CDM (switch to existing X11 VT if already running).
     - [x] Fully support Freedesktop.org `.desktop` Exec variables parsing (e.g. `%f`, `%u`).
     - [x] Isolate the UI mapping logic for `dialogrc` colors to `tview` colors.

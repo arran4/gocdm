@@ -96,7 +96,7 @@ func GetVT(xtty string, display int) (string, error) {
 // altStartX: whether to use alternate startx launch method.
 // startXLog: path to log file.
 // serverArgs: additional arguments for X server.
-func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTimeout int, altStartX bool, startXLog string, serverArgs []string) error {
+func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTimeout int, altStartX bool, startXLog string, serverArgs []string, env []string) error {
 	// Construct X server arguments
 	// e.g. :0 -nolisten tcp vt7
 	xArgs := []string{fmt.Sprintf(":%d", display)}
@@ -118,6 +118,9 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	cmd := execCommand("startx", cmdArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
+	}
+	if len(env) > 0 {
+		cmd.Env = append([]string{}, env...)
 	}
 
 	// Logging

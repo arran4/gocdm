@@ -28,7 +28,7 @@ func TestLaunchXSessionConsoleKit(t *testing.T) {
 	defer os.Remove(tmpLog.Name())
 
 	// Test with consoleKit=true
-	err = LaunchXSession([]string{"my-wm"}, 1, "8", true, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"})
+	err = LaunchXSession([]string{"my-wm"}, 1, "8", true, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"}, []string{"USER=demo"})
 	if err != nil {
 		t.Fatalf("LaunchXSession failed: %v", err)
 	}
