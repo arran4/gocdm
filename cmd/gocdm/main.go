@@ -183,6 +183,37 @@ func run(args []string, exit func(int)) {
 
 	case "X":
 		// X program
+
+		// If X is already running and locktty=yes, activate it.
+		if cfg.LockTTY && x11.IsDisplayActive(cfg.Display) {
+			vt, err := x11.GetVT(cfg.XTTY, cfg.Display)
+			if err != nil {
+				if *dryRun {
+					fmt.Fprintf(os.Stderr, "Dry run warning: Failed to get VT for locktty: %v. Assuming VT7.\n", err)
+					vt = "7"
+				} else {
+					fmt.Fprintf(os.Stderr, "Failed to get VT for locktty: %v\n", err)
+					exit(1)
+					return
+				}
+			}
+
+			if *dryRun {
+				fmt.Printf("Dry run: would switch to existing X session on display :%d VT%s\n", cfg.Display, vt)
+				return
+			}
+
+			if err := x11.SwitchVT(vt); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch VT: %v\n", err)
+				exit(1)
+				return
+			}
+
+			// Successfully switched, exit normal
+			exit(0)
+			return
+		}
+
 		display := cfg.Display // Start from 0 effectively since FindFreeDisplay starts at 0
 
 		// Find free display

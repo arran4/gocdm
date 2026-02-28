@@ -11,6 +11,34 @@ import (
 
 var execCommand = exec.Command
 
+// IsDisplayActive checks if the given display number is active.
+func IsDisplayActive(display int) bool {
+	cmd := execCommand("xdpyinfo", "-display", fmt.Sprintf(":%d.0", display))
+	output, _ := cmd.CombinedOutput()
+
+	// If the command succeeds, the display is active.
+	if cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		return true
+	}
+
+	outStr := string(output)
+	if strings.Contains(outStr, "No protocol specified") || strings.Contains(outStr, "Invalid MIT") {
+		// Display is active but inaccessible
+		return true
+	}
+
+	return false
+}
+
+// SwitchVT switches the virtual terminal to the given VT number.
+func SwitchVT(vt string) error {
+	cmd := execCommand("chvt", vt)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to switch to VT %s: %w", vt, err)
+	}
+	return nil
+}
+
 // FindFreeDisplay finds the first available X display number starting from 0.
 func FindFreeDisplay() (int, error) {
 	for i := 0; i < 7; i++ {

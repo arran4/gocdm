@@ -199,3 +199,64 @@ func TestRunInvalidConfig(t *testing.T) {
 		t.Errorf("Expected exit(1) for invalid config, got exited=%v code=%d", exited, code)
 	}
 }
+
+func TestRunXSessionLockTTYActive(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cdm-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create a mock xdpyinfo that exits 0 to simulate active display
+	xdpyinfoPath := tmpDir + "/xdpyinfo"
+	os.WriteFile(xdpyinfoPath, []byte("#!/bin/sh\nexit 0\n"), 0755)
+
+	// Create a mock tty for GetVT("keep") just in case
+	ttyPath := tmpDir + "/tty"
+	os.WriteFile(ttyPath, []byte("#!/bin/sh\necho /dev/tty7\n"), 0755)
+
+	// Prepend tmpDir to PATH so our mocks are found
+	oldPath := os.Getenv("PATH")
+	os.Setenv("PATH", tmpDir+":"+oldPath)
+	defer os.Setenv("PATH", oldPath)
+
+	configPath := tmpDir + "/cdmrc"
+	content := `binlist=("startx")
+namelist=("TestX")
+flaglist=("X")
+locktty=yes
+display=0
+xtty=keep`
+	os.WriteFile(configPath, []byte(content), 0644)
+
+	exited := false
+	code := -1
+	mockExit := func(c int) {
+		exited = true
+		code = c
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// This tests the dry run logic with locktty parsed and mock xdpyinfo success
+	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	buf := make([]byte, 1024)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if exited {
+		t.Errorf("Expected dry run to return without exit, but exited with %d", code)
+	}
+
+	expectedOutput := "Dry run: would switch to existing X session on display :0 VT7\n"
+	if output != expectedOutput {
+		t.Errorf("Expected output %q, got %q", expectedOutput, output)
+	}
+}

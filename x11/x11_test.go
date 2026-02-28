@@ -74,6 +74,9 @@ func TestHelperProcess(t *testing.T) {
 		// Default to taken (0) to allow loop to continue if not mocked specifically
 		os.Exit(0)
 	}
+	if cmd == "chvt" {
+		os.Exit(0)
+	}
 	if cmd == "tty" {
 		fmt.Println("/dev/tty1")
 		os.Exit(0)
@@ -142,5 +145,50 @@ func TestLaunchXSession(t *testing.T) {
 	err = LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"})
 	if err != nil {
 		t.Fatalf("LaunchXSession failed: %v", err)
+	}
+}
+
+func TestIsDisplayActive(t *testing.T) {
+	origExecCommand := execCommand
+	defer func() { execCommand = origExecCommand }()
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+		return cmd
+	}
+
+	os.Setenv("MOCK_DISPLAY_STATUS_0", "taken")
+	defer os.Unsetenv("MOCK_DISPLAY_STATUS_0")
+
+	if !IsDisplayActive(0) {
+		t.Errorf("Expected display 0 to be active")
+	}
+
+	os.Setenv("MOCK_DISPLAY_STATUS_1", "free")
+	defer os.Unsetenv("MOCK_DISPLAY_STATUS_1")
+
+	if IsDisplayActive(1) {
+		t.Errorf("Expected display 1 to be inactive")
+	}
+}
+
+func TestSwitchVT(t *testing.T) {
+	origExecCommand := execCommand
+	defer func() { execCommand = origExecCommand }()
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+		return cmd
+	}
+
+	err := SwitchVT("7")
+	if err != nil {
+		t.Errorf("Expected SwitchVT to succeed, got err: %v", err)
 	}
 }
