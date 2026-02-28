@@ -26,21 +26,42 @@ func TestRunHelp(t *testing.T) {
 }
 
 func TestRunVersion(t *testing.T) {
-    exited := false
-    code := -1
-    mockExit := func(c int) {
-        exited = true
-        code = c
-    }
+	exited := false
+	code := -1
+	mockExit := func(c int) {
+		exited = true
+		code = c
+	}
 
-    run([]string{"-version"}, mockExit)
+	run([]string{"-version"}, mockExit)
 
-    if !exited {
-        t.Error("Expected exit(0) for -version, but did not exit")
-    }
-    if code != 0 {
-        t.Errorf("Expected exit code 0 for -version, got %d", code)
-    }
+	if !exited {
+		t.Error("Expected exit(0) for -version, but did not exit")
+	}
+	if code != 0 {
+		t.Errorf("Expected exit code 0 for -version, got %d", code)
+	}
+}
+
+func TestValidateTTYNonDryRunRequiresTerminal(t *testing.T) {
+	original := isTerminal
+	t.Cleanup(func() { isTerminal = original })
+	isTerminal = func(fd int) bool { return false }
+
+	err := validateTTY(false)
+	if err == nil {
+		t.Fatal("expected validateTTY to fail when no TTY is attached")
+	}
+}
+
+func TestValidateTTYDryRunSkipsTerminalRequirement(t *testing.T) {
+	original := isTerminal
+	t.Cleanup(func() { isTerminal = original })
+	isTerminal = func(fd int) bool { return false }
+
+	if err := validateTTY(true); err != nil {
+		t.Fatalf("expected dry-run TTY validation to pass, got %v", err)
+	}
 }
 
 func TestRunDryRunNoSessions(t *testing.T) {
@@ -49,17 +70,14 @@ func TestRunDryRunNoSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpHome)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpHome); err != nil {
+			t.Errorf("cleanup failed: %v", err)
+		}
+	})
 
-	oldHome := os.Getenv("HOME")
-	oldXDG := os.Getenv("XDG_CONFIG_HOME")
-	defer func() {
-		os.Setenv("HOME", oldHome)
-		os.Setenv("XDG_CONFIG_HOME", oldXDG)
-	}()
-
-	os.Setenv("HOME", tmpHome)
-	os.Setenv("XDG_CONFIG_HOME", tmpHome)
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("XDG_CONFIG_HOME", tmpHome)
 
 	exited := false
 	code := -1
@@ -107,13 +125,19 @@ func TestRunWaylandSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("cleanup failed: %v", err)
+		}
+	})
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("sway")
 namelist=("Sway")
 flaglist=("W")`
-	os.WriteFile(configPath, []byte(content), 0644)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	exited := false
 	code := -1
@@ -130,7 +154,9 @@ flaglist=("W")`
 	// Should do dry run and return successfully
 	run([]string{"-config", configPath, "-dry-run"}, mockExit)
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	os.Stdout = oldStdout
 
 	buf := make([]byte, 1024)
@@ -152,13 +178,19 @@ func TestRunConsoleSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("cleanup failed: %v", err)
+		}
+	})
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("echo test")
 namelist=("Test")
 flaglist=("C")`
-	os.WriteFile(configPath, []byte(content), 0644)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	exited := false
 	code := -1
@@ -180,13 +212,19 @@ func TestRunXSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("cleanup failed: %v", err)
+		}
+	})
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("startx")
 namelist=("TestX")
 flaglist=("X")`
-	os.WriteFile(configPath, []byte(content), 0644)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	exited := false
 	code := -1
@@ -208,13 +246,19 @@ func TestRunConsoleEmptyCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("cleanup failed: %v", err)
+		}
+	})
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("")
 namelist=("Empty")
 flaglist=("C")`
-	os.WriteFile(configPath, []byte(content), 0644)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	exited := false
 	code := -1
@@ -250,20 +294,26 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Errorf("cleanup failed: %v", err)
+		}
+	})
 
 	// Create a mock xdpyinfo that exits 0 to simulate active display
 	xdpyinfoPath := tmpDir + "/xdpyinfo"
-	os.WriteFile(xdpyinfoPath, []byte("#!/bin/sh\nexit 0\n"), 0755)
+	if err := os.WriteFile(xdpyinfoPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create a mock tty for GetVT("keep") just in case
 	ttyPath := tmpDir + "/tty"
-	os.WriteFile(ttyPath, []byte("#!/bin/sh\necho /dev/tty7\n"), 0755)
+	if err := os.WriteFile(ttyPath, []byte("#!/bin/sh\necho /dev/tty7\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	// Prepend tmpDir to PATH so our mocks are found
-	oldPath := os.Getenv("PATH")
-	os.Setenv("PATH", tmpDir+":"+oldPath)
-	defer os.Setenv("PATH", oldPath)
+	t.Setenv("PATH", tmpDir+":"+os.Getenv("PATH"))
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("startx")
@@ -272,7 +322,9 @@ flaglist=("X")
 locktty=yes
 display=0
 xtty=keep`
-	os.WriteFile(configPath, []byte(content), 0644)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	exited := false
 	code := -1
@@ -289,7 +341,9 @@ xtty=keep`
 	// This tests the dry run logic with locktty parsed and mock xdpyinfo success
 	run([]string{"-config", configPath, "-dry-run"}, mockExit)
 
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	os.Stdout = oldStdout
 
 	buf := make([]byte, 1024)

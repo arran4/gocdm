@@ -49,6 +49,7 @@
     - [ ] Make GoCDM a standalone `getty` replacement.
         - [ ] Integrate PAM for native user authentication (username/password prompting).
         - [ ] Manage TTY allocation and session handoffs directly (replacing `login`/`agetty`).
+            - [x] Require an interactive TTY before launching non-dry-run sessions.
             - [x] Ensure VT handoff occurs before launching a new X session.
         - [x] Read and set environment variables securely from `/etc/passwd` and `/etc/security/pam_env.conf`.
     - [x] Implement `locktty=yes` feature from legacy CDM (switch to existing X11 VT if already running).
