@@ -139,18 +139,51 @@ func run(args []string, exit func(int)) {
 
 	// Normalize flag
 	flagVal := strings.ToUpper(selectedSession.Type)
-	// gocdm script: [Cc] -> Console, [Xx] -> X.
+	// gocdm script: [Cc] -> Console, [Xx] -> X, [Ww] -> Wayland.
 	if strings.HasPrefix(flagVal, "C") {
 		flagVal = "C"
 	} else if strings.HasPrefix(flagVal, "W") {
-		flagVal = "C" // Treat Wayland as Console/Command
+		flagVal = "W"
 	} else if strings.HasPrefix(flagVal, "X") {
 		flagVal = "X"
 	}
 
 	switch flagVal {
+	case "W":
+		// Wayland session
+		parts := strings.Fields(selectedSession.Exec)
+		if len(parts) == 0 {
+			fmt.Fprintln(os.Stderr, "Empty command")
+			exit(1)
+			return
+		}
+		bin := parts[0]
+		args := parts[1:]
+
+		if *dryRun {
+			fmt.Printf("Dry run: would execute Wayland program: %s %v\n", bin, args)
+			return
+		}
+
+		binary, err := exec.LookPath(bin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
+			exit(1)
+			return
+		}
+
+		env := os.Environ()
+		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
+		env = append(env, "XDG_SESSION_TYPE=wayland")
+
+		if err := syscall.Exec(binary, append([]string{bin}, args...), env); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
+			exit(1)
+			return
+		}
+
 	case "C":
-		// Console program (and Wayland)
+		// Console program
 		parts := strings.Fields(selectedSession.Exec)
 		if len(parts) == 0 {
 			fmt.Fprintln(os.Stderr, "Empty command")
