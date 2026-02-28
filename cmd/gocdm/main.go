@@ -9,8 +9,8 @@ import (
 	"syscall"
 
 	"github.com/arran4/gocdm/config"
+	"github.com/arran4/gocdm/dialog"
 	"github.com/arran4/gocdm/session"
-	"github.com/arran4/gocdm/ui"
 	"github.com/arran4/gocdm/x11"
 )
 
@@ -115,7 +115,7 @@ func run(args []string, exit func(int)) {
 			}
 		}
 
-		idx, err := ui.ShowMenu("Console Display Manager", optionNames, details, cfg.CountFrom, defaultIdx, cfg.DialogRC)
+		idx, err := dialog.ShowMenu("Console Display Manager", optionNames, details, cfg.CountFrom, defaultIdx, cfg.DialogRC)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Selection cancelled or error: %v\n", err)
 			exit(2)

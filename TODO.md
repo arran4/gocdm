@@ -42,3 +42,24 @@
     - [x] Remove `temp_cdm`
     - [x] Run `go test ./...`
     - [x] Update `TODO.md`
+
+- [ ] Gap Analysis / Missing Features
+    - [x] Support legacy `dialogrc` themes in `dialog` package (Parser complete, UI hook up pending)
+    - [x] Fully implement ConsoleKit monitoring in `x11/x11.go`
+    - [ ] Make GoCDM a standalone `getty` replacement.
+        - [ ] Integrate PAM for native user authentication (username/password prompting).
+        - [ ] Manage TTY allocation and session handoffs directly (replacing `login`/`agetty`).
+        - [ ] Read and set environment variables securely from `/etc/passwd` and `/etc/security/pam_env.conf`.
+    - [ ] Implement `locktty=yes` feature from legacy CDM (switch to existing X11 VT if already running).
+    - [ ] Fully support Freedesktop.org `.desktop` Exec variables parsing (e.g. `%f`, `%u`).
+    - [ ] Isolate the UI mapping logic for `dialogrc` colors to `tview` colors.
+
+- [ ] Increase Test Coverage
+    - [x] `config/state.go` tests (`TestLoadState`, `TestSaveState`)
+    - [x] `x11/x11.go` tests (`TestGetVT`, `TestLaunchXSession`)
+    - [x] `session/discovery.go` tests (cover `parseDesktopFile` errors)
+    - [x] `dialog/dialog.go` tests (cover details modal `?` key)
+    - [x] `cmd/gocdm/main.go` tests (mock execution and flags)
+    - [ ] Source additional `.dialogrc` examples into `dialog/testdata/todo/` for testing edge case parser scenarios.
+
+- [ ] Support C bindings (ideally using github.com/ebitengine/purego instead of cgo if strictly necessary)

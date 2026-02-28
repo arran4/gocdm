@@ -78,6 +78,9 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	// Construct startx arguments
 	// startx client -- server_args
 	cmdArgs := []string{}
+	if consoleKit {
+		cmdArgs = append(cmdArgs, "ck-launch-session")
+	}
 	cmdArgs = append(cmdArgs, bin...)
 	cmdArgs = append(cmdArgs, "--")
 	cmdArgs = append(cmdArgs, xArgs...)
@@ -98,10 +101,6 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	defer outfile.Close()
 	cmd.Stdout = outfile
 	cmd.Stderr = outfile
-
-	if consoleKit {
-		fmt.Fprintf(os.Stderr, "Warning: ConsoleKit monitoring not fully implemented in Go port yet.\n")
-	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start session: %w", err)

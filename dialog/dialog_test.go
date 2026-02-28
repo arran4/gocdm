@@ -1,4 +1,4 @@
-package ui
+package dialog
 
 import (
 	"testing"
@@ -85,5 +85,37 @@ func TestShowMenuCancel(t *testing.T) {
 	}
 	if err.Error() != "cancelled" {
 		t.Errorf("Expected 'cancelled' error, got '%v'", err)
+	}
+}
+
+func TestShowMenuDetailsModal(t *testing.T) {
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("Failed to init simulation screen: %v", err)
+	}
+	testScreen = s
+	defer func() { testScreen = nil }()
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		// Press '?' to show modal
+		s.InjectKey(tcell.KeyRune, '?', tcell.ModNone)
+
+		time.Sleep(100 * time.Millisecond)
+		// Press 'Enter' to close modal
+		s.InjectKey(tcell.KeyEnter, ' ', tcell.ModNone)
+
+		time.Sleep(100 * time.Millisecond)
+		// Press 'Enter' again to select the item and exit
+		s.InjectKey(tcell.KeyEnter, ' ', tcell.ModNone)
+	}()
+
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, []string{"Detail A", "Detail B"}, 0, 0, "")
+	if err != nil {
+		t.Fatalf("ShowMenu returned error: %v", err)
+	}
+
+	if idx != 0 {
+		t.Errorf("Expected index 0, got %d", idx)
 	}
 }

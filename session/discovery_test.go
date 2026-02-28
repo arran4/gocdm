@@ -4,7 +4,17 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	_ "embed"
 )
+
+//go:embed testdata/missing_exec.desktop
+var missingExecContent []byte
+
+//go:embed testdata/missing_tryexec.desktop
+var missingTryExecContent []byte
+
+//go:embed testdata/missing_exec_bin.desktop
+var missingExecBinContent []byte
 
 func TestDiscoverSessions(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
@@ -119,5 +129,34 @@ Exec=/bin/sh -c "echo userwayland"
 		} else if gotType != typ {
 			t.Errorf("Expected session '%s' to have type '%s', got '%s'", name, typ, gotType)
 		}
+	}
+}
+
+func TestParseDesktopFileErrors(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cdm-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Missing Exec
+	path1 := filepath.Join(tmpDir, "1.desktop")
+	os.WriteFile(path1, missingExecContent, 0644)
+	if _, err := parseDesktopFile(path1, "X"); err == nil {
+		t.Error("Expected error for missing Exec")
+	}
+
+	// TryExec not found
+	path2 := filepath.Join(tmpDir, "2.desktop")
+	os.WriteFile(path2, missingTryExecContent, 0644)
+	if _, err := parseDesktopFile(path2, "X"); err == nil {
+		t.Error("Expected error for missing TryExec binary")
+	}
+
+	// Exec binary not found (when no TryExec)
+	path3 := filepath.Join(tmpDir, "3.desktop")
+	os.WriteFile(path3, missingExecBinContent, 0644)
+	if _, err := parseDesktopFile(path3, "X"); err == nil {
+		t.Error("Expected error for missing Exec binary")
 	}
 }
