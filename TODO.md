@@ -55,7 +55,7 @@
     - [x] Fully support Freedesktop.org `.desktop` Exec variables parsing (e.g. `%f`, `%u`).
     - [x] Isolate the UI mapping logic for `dialogrc` colors to `tview` colors.
 
-- [ ] Increase Test Coverage
+- [x] Increase Test Coverage
     - [x] `config/state.go` tests (`TestLoadState`, `TestSaveState`)
     - [x] `x11/x11.go` tests (`TestGetVT`, `TestLaunchXSession`)
     - [x] `session/discovery.go` tests (cover `parseDesktopFile` errors)
@@ -63,4 +63,6 @@
     - [x] `cmd/gocdm/main.go` tests (mock execution and flags)
     - [x] Source additional `.dialogrc` examples into `dialog/testdata/todo/` for testing edge case parser scenarios.
 
-- [ ] Support C bindings (ideally using github.com/ebitengine/purego instead of cgo if strictly necessary)
+- [x] Support C bindings (using cgo `-buildmode=c-shared` entrypoint)
+    - [x] Add `cmd/gocdm-bindings` exported C API entrypoint
+    - [x] Add `bindings` package JSON response helpers and tests

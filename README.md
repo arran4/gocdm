@@ -43,3 +43,35 @@ However, you can achieve a pseudo-getty autologin setup by configuring your init
 ## Customisation
 
 See `/etc/cdmrc` for examples.
+
+
+## C bindings
+
+GoCDM now provides a `c-shared` entrypoint at `cmd/gocdm-bindings` for embedding core capabilities in native applications.
+
+Build the shared library and generated header with:
+
+```bash
+go build -buildmode=c-shared -o libgocdm.so ./cmd/gocdm-bindings
+```
+
+The generated header exposes:
+
+* `GoCDMDefaultConfigJSON()`
+* `GoCDMLoadConfigJSON(const char* path)`
+* `GoCDMDiscoverSessionsJSON(const char* home_dir)`
+* `GoCDMFreeCString(char* s)`
+
+Each function returns a heap-allocated JSON response envelope with this shape:
+
+```json
+{"ok":true,"data":{...}}
+```
+
+or on failure:
+
+```json
+{"ok":false,"error":"..."}
+```
+
+Always release returned strings with `GoCDMFreeCString`.
