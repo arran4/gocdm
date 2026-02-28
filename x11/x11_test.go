@@ -83,3 +83,64 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	}
 }
+
+func TestGetVT(t *testing.T) {
+	origExecCommand := execCommand
+	defer func() { execCommand = origExecCommand }()
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+		return cmd
+	}
+
+	// Test "keep" with valid tty output
+	vt, err := GetVT("keep", 0)
+	if err != nil {
+		t.Fatalf("GetVT keep failed: %v", err)
+	}
+	if vt != "1" {
+		t.Errorf("Expected VT 1, got %s", vt)
+	}
+
+	// Test number format
+	vt, err = GetVT("7", 1)
+	if err != nil {
+		t.Fatalf("GetVT number failed: %v", err)
+	}
+	if vt != "8" {
+		t.Errorf("Expected VT 8, got %s", vt)
+	}
+
+	// Test invalid number format
+	_, err = GetVT("invalid", 1)
+	if err == nil {
+		t.Fatal("Expected error for invalid xtty format")
+	}
+}
+
+func TestLaunchXSession(t *testing.T) {
+	origExecCommand := execCommand
+	defer func() { execCommand = origExecCommand }()
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+		return cmd
+	}
+
+	tmpLog, err := os.CreateTemp("", "startx_log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpLog.Name())
+
+	err = LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, tmpLog.Name(), []string{"-nolisten", "tcp"})
+	if err != nil {
+		t.Fatalf("LaunchXSession failed: %v", err)
+	}
+}

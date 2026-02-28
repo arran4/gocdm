@@ -101,3 +101,101 @@ func TestRunUnknownFlag(t *testing.T) {
 		t.Errorf("Expected exit code 2 for unknown flag, got %d", code)
 	}
 }
+
+func TestRunConsoleSessionDryRun(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cdm-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	configPath := tmpDir + "/cdmrc"
+	content := `binlist=("echo test")
+namelist=("Test")
+flaglist=("C")`
+	os.WriteFile(configPath, []byte(content), 0644)
+
+	exited := false
+	code := -1
+	mockExit := func(c int) {
+		exited = true
+		code = c
+	}
+
+	// Should do dry run and return successfully
+	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+
+	if exited {
+		t.Errorf("Expected dry run to return without exit, but exited with %d", code)
+	}
+}
+
+func TestRunXSessionDryRun(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cdm-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	configPath := tmpDir + "/cdmrc"
+	content := `binlist=("startx")
+namelist=("TestX")
+flaglist=("X")`
+	os.WriteFile(configPath, []byte(content), 0644)
+
+	exited := false
+	code := -1
+	mockExit := func(c int) {
+		exited = true
+		code = c
+	}
+
+	// Should do dry run and return successfully
+	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+
+	if exited {
+		t.Errorf("Expected dry run to return without exit, but exited with %d", code)
+	}
+}
+
+func TestRunConsoleEmptyCommand(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cdm-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	configPath := tmpDir + "/cdmrc"
+	content := `binlist=("")
+namelist=("Empty")
+flaglist=("C")`
+	os.WriteFile(configPath, []byte(content), 0644)
+
+	exited := false
+	code := -1
+	mockExit := func(c int) {
+		exited = true
+		code = c
+	}
+
+	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+
+	if !exited || code != 1 {
+		t.Errorf("Expected exit(1) for empty command, got exited=%v code=%d", exited, code)
+	}
+}
+
+func TestRunInvalidConfig(t *testing.T) {
+	exited := false
+	code := -1
+	mockExit := func(c int) {
+		exited = true
+		code = c
+	}
+
+	run([]string{"-config", "/nonexistent/path/that/will/fail"}, mockExit)
+
+	if !exited || code != 1 {
+		t.Errorf("Expected exit(1) for invalid config, got exited=%v code=%d", exited, code)
+	}
+}

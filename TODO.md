@@ -42,3 +42,14 @@
     - [x] Remove `temp_cdm`
     - [x] Run `go test ./...`
     - [x] Update `TODO.md`
+
+- [ ] Gap Analysis / Missing Features
+    - [ ] Support legacy `dialogrc` themes in `ui/dialog.go`
+    - [ ] Fully implement ConsoleKit monitoring in `x11/x11.go`
+
+- [ ] Increase Test Coverage
+    - [x] `config/state.go` tests (`TestLoadState`, `TestSaveState`)
+    - [x] `x11/x11.go` tests (`TestGetVT`, `TestLaunchXSession`)
+    - [x] `session/discovery.go` tests (cover `parseDesktopFile` errors)
+    - [x] `ui/dialog.go` tests (cover details modal `?` key)
+    - [x] `cmd/gocdm/main.go` tests (mock execution and flags)

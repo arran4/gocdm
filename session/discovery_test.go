@@ -121,3 +121,44 @@ Exec=/bin/sh -c "echo userwayland"
 		}
 	}
 }
+
+func TestParseDesktopFileErrors(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cdm-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Missing Exec
+	content1 := `[Desktop Entry]
+Name=Test
+`
+	path1 := filepath.Join(tmpDir, "1.desktop")
+	os.WriteFile(path1, []byte(content1), 0644)
+	if _, err := parseDesktopFile(path1, "X"); err == nil {
+		t.Error("Expected error for missing Exec")
+	}
+
+	// TryExec not found
+	content2 := `[Desktop Entry]
+Name=Test
+Exec=something
+TryExec=nonexistent_binary_xyz
+`
+	path2 := filepath.Join(tmpDir, "2.desktop")
+	os.WriteFile(path2, []byte(content2), 0644)
+	if _, err := parseDesktopFile(path2, "X"); err == nil {
+		t.Error("Expected error for missing TryExec binary")
+	}
+
+	// Exec binary not found (when no TryExec)
+	content3 := `[Desktop Entry]
+Name=Test
+Exec=nonexistent_binary_abc --flag
+`
+	path3 := filepath.Join(tmpDir, "3.desktop")
+	os.WriteFile(path3, []byte(content3), 0644)
+	if _, err := parseDesktopFile(path3, "X"); err == nil {
+		t.Error("Expected error for missing Exec binary")
+	}
+}
