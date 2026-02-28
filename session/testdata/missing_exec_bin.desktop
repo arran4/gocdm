@@ -1,0 +1,3 @@
+[Desktop Entry]
+Name=Test
+Exec=nonexistent_binary_abc --flag

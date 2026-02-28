@@ -1,0 +1,4 @@
+[Desktop Entry]
+Name=Test
+Exec=something
+TryExec=nonexistent_binary_xyz
