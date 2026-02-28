@@ -102,6 +102,51 @@ func TestRunUnknownFlag(t *testing.T) {
 	}
 }
 
+func TestRunWaylandSessionDryRun(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cdm-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	configPath := tmpDir + "/cdmrc"
+	content := `binlist=("sway")
+namelist=("Sway")
+flaglist=("W")`
+	os.WriteFile(configPath, []byte(content), 0644)
+
+	exited := false
+	code := -1
+	mockExit := func(c int) {
+		exited = true
+		code = c
+	}
+
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Should do dry run and return successfully
+	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	buf := make([]byte, 1024)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+
+	if exited {
+		t.Errorf("Expected dry run to return without exit, but exited with %d", code)
+	}
+
+	expectedOutput := "Dry run: would execute Wayland program: sway []\n"
+	if output != expectedOutput {
+		t.Errorf("Expected output %q, got %q", expectedOutput, output)
+	}
+}
+
 func TestRunConsoleSessionDryRun(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
