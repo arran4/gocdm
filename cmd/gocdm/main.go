@@ -13,9 +13,11 @@ import (
 	"github.com/arran4/gocdm/dialog"
 	"github.com/arran4/gocdm/session"
 	"github.com/arran4/gocdm/x11"
+	"golang.org/x/term"
 )
 
 var version = "dev"
+var isTerminal = term.IsTerminal
 
 func main() {
 	run(os.Args[1:], os.Exit)
@@ -132,6 +134,12 @@ func run(args []string, exit func(int)) {
 	}
 
 	selectedSession := sessions[selectedIdx]
+	if err := validateTTY(*dryRun); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		exit(1)
+		return
+	}
+
 	username := currentUsername()
 	sessionEnv, err := config.BuildSessionEnv(os.Environ(), username, "/etc/passwd", "/etc/security/pam_env.conf")
 	if err != nil {
@@ -254,21 +262,18 @@ func run(args []string, exit func(int)) {
 			return
 		}
 
-		display := cfg.Display // Start from 0 effectively since FindFreeDisplay starts at 0
-
 		// Find free display
-		disp, err := x11.FindFreeDisplay()
+		display, err := x11.FindFreeDisplay()
 		if err != nil {
 			if *dryRun {
 				fmt.Fprintf(os.Stderr, "Dry run warning: Failed to find free display (likely no X running or tools missing): %v. Assuming :0.\n", err)
-				disp = 0
+				display = 0
 			} else {
 				fmt.Fprintf(os.Stderr, "Failed to find free display: %v\n", err)
 				exit(1)
 				return
 			}
 		}
-		display = disp
 
 		vt, err := x11.GetVT(cfg.XTTY, display)
 		if err != nil {
@@ -312,4 +317,14 @@ func currentUsername() string {
 		return u.Username
 	}
 	return ""
+}
+
+func validateTTY(dryRun bool) error {
+	if dryRun {
+		return nil
+	}
+	if !isTerminal(int(os.Stdin.Fd())) || !isTerminal(int(os.Stdout.Fd())) || !isTerminal(int(os.Stderr.Fd())) {
+		return fmt.Errorf("gocdm must be launched from an interactive TTY")
+	}
+	return nil
 }
