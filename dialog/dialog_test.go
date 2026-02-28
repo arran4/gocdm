@@ -1,11 +1,39 @@
 package dialog
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
+
+func TestMapColor(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected tcell.Color
+	}{
+		{"BLACK", tcell.ColorBlack},
+		{"RED", tcell.ColorRed},
+		{"GREEN", tcell.ColorGreen},
+		{"YELLOW", tcell.ColorYellow},
+		{"BLUE", tcell.ColorBlue},
+		{"MAGENTA", tcell.ColorPurple},
+		{"CYAN", tcell.ColorTeal},
+		{"WHITE", tcell.ColorWhite},
+		{"unknown", tcell.ColorDefault},
+		{"   blue  ", tcell.ColorBlue},
+		{"red", tcell.ColorRed},
+	}
+
+	for _, tt := range tests {
+		actual := MapColor(tt.input)
+		if actual != tt.expected {
+			t.Errorf("MapColor(%q): expected %v, got %v", tt.input, tt.expected, actual)
+		}
+	}
+}
 
 func TestShowMenu(t *testing.T) {
 	s := tcell.NewSimulationScreen("UTF-8")
@@ -31,6 +59,41 @@ func TestShowMenu(t *testing.T) {
 	// DefaultIdx: 0
 	// Theme: ""
 	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, "")
+	if err != nil {
+		t.Fatalf("ShowMenu returned error: %v", err)
+	}
+
+	if idx != 0 {
+		t.Errorf("Expected index 0, got %d", idx)
+	}
+}
+
+func TestShowMenuWithTheme(t *testing.T) {
+	s := tcell.NewSimulationScreen("UTF-8")
+	if err := s.Init(); err != nil {
+		t.Fatalf("Failed to init simulation screen: %v", err)
+	}
+	testScreen = s
+	defer func() { testScreen = nil }()
+
+	// Create a temporary theme file
+	tmpDir := t.TempDir()
+	themeFile := filepath.Join(tmpDir, "test.dialogrc")
+	themeContent := `
+screen_color = (YELLOW,BLACK,ON)
+item_color = (RED,BLACK,OFF)
+item_selected_color = (GREEN,BLACK,ON)
+`
+	if err := os.WriteFile(themeFile, []byte(themeContent), 0644); err != nil {
+		t.Fatalf("Failed to write temp theme: %v", err)
+	}
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		s.InjectKey(tcell.KeyEnter, ' ', tcell.ModNone)
+	}()
+
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, themeFile)
 	if err != nil {
 		t.Fatalf("ShowMenu returned error: %v", err)
 	}
