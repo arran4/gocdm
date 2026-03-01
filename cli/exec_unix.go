@@ -1,9 +1,9 @@
 //go:build !windows
 
-package main
+package cli
 
 import "syscall"
 
-func execProgram(binary string, args []string, env []string) error {
+func ExecProgram(binary string, args []string, env []string) error {
 	return syscall.Exec(binary, args, env)
 }

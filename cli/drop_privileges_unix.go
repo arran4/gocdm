@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package cli
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"syscall"
 )
 
-func dropPrivileges(username string) error {
+func DropPrivileges(username string) error {
 	if username == "" {
 		return fmt.Errorf("username is required for privilege drop")
 	}
