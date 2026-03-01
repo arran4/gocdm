@@ -64,7 +64,33 @@ func TestValidateTTYDryRunSkipsTerminalRequirement(t *testing.T) {
 	}
 }
 
+func mockEnvFiles(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "env-mocks")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	origPasswdFilePath := passwdFilePath
+	origPamEnvConfPath := pamEnvConfPath
+	passwdFilePath = tmpDir + "/passwd"
+	pamEnvConfPath = tmpDir + "/pam_env.conf"
+
+	if err := os.WriteFile(passwdFilePath, []byte(currentUsername()+":x:1000:1000:User:/home/user:/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pamEnvConfPath, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		passwdFilePath = origPasswdFilePath
+		pamEnvConfPath = origPamEnvConfPath
+		os.RemoveAll(tmpDir)
+	})
+}
+
 func TestRunDryRunNoSessions(t *testing.T) {
+	mockEnvFiles(t)
 	// Create temp home with no sessions
 	tmpHome, err := os.MkdirTemp("", "test_home")
 	if err != nil {
@@ -121,6 +147,7 @@ func TestRunUnknownFlag(t *testing.T) {
 }
 
 func TestRunWaylandSessionDryRun(t *testing.T) {
+	mockEnvFiles(t)
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -174,6 +201,7 @@ flaglist=("W")`
 }
 
 func TestRunConsoleSessionDryRun(t *testing.T) {
+	mockEnvFiles(t)
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +236,7 @@ flaglist=("C")`
 }
 
 func TestRunXSessionDryRun(t *testing.T) {
+	mockEnvFiles(t)
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -242,6 +271,7 @@ flaglist=("X")`
 }
 
 func TestRunConsoleEmptyCommand(t *testing.T) {
+	mockEnvFiles(t)
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -275,6 +305,7 @@ flaglist=("C")`
 }
 
 func TestRunInvalidConfig(t *testing.T) {
+	mockEnvFiles(t)
 	exited := false
 	code := -1
 	mockExit := func(c int) {
@@ -290,6 +321,7 @@ func TestRunInvalidConfig(t *testing.T) {
 }
 
 func TestRunXSessionLockTTYActive(t *testing.T) {
+	mockEnvFiles(t)
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
