@@ -1,3 +1,6 @@
+//go:build !windows
+// +build !windows
+
 package main
 
 import (
@@ -340,7 +343,7 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 
 	// Create a mock tty for GetVT("keep") just in case
 	ttyPath := tmpDir + "/tty"
-	if err := os.WriteFile(ttyPath, []byte("#!/bin/sh\necho /dev/tty7\n"), 0o755); err != nil {
+	if err := os.WriteFile(ttyPath, []byte("#!/bin/sh\necho /dev/tty7\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
