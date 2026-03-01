@@ -18,6 +18,7 @@ import (
 
 var version = "dev"
 var isTerminal = term.IsTerminal
+
 // TODO figure out how to support cygwin/wsl for parsing /etc/passwd and pam_env.conf properly
 var passwdFilePath = "/etc/passwd"
 var pamEnvConfPath = "/etc/security/pam_env.conf"
