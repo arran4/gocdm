@@ -7,17 +7,16 @@ import (
 )
 
 func TestStateLoadSave(t *testing.T) {
-	// We need to mock user home dir. The easiest way without patching os.UserHomeDir
-	// is to just set HOME env var which UserHomeDir respects on unix.
+	// We need to mock user home dir. Set both HOME (unix) and USERPROFILE (windows)
+	// so os.UserHomeDir resolves to the temp directory on all supported platforms.
 	tmpHome, err := os.MkdirTemp("", "gocdm-home")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpHome)
 
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-	os.Setenv("HOME", tmpHome)
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	// Test load when file does not exist
 	state, err := LoadState()
@@ -50,9 +49,8 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpHome)
 
-	origHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", origHome)
-	os.Setenv("HOME", tmpHome)
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
 
 	stateDir := filepath.Join(tmpHome, ".config", "gocdm")
 	if err := os.MkdirAll(stateDir, 0755); err != nil {

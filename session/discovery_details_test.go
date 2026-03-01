@@ -13,6 +13,7 @@ func TestDiscoveryDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
+	testCommand := setupPathExecutable(t, tmpDir)
 
 	x11Dir := filepath.Join(tmpDir, "etc", "X11", "Sessions")
 	xsessionsDir := filepath.Join(tmpDir, "usr", "share", "xsessions")
@@ -35,10 +36,9 @@ func TestDiscoveryDetails(t *testing.T) {
 
 	// 2. Standard XSession .desktop
 	standardPath := filepath.Join(xsessionsDir, "standard.desktop")
-	desktopContent := `[Desktop Entry]
-Name=Standard X Session
-Exec=/bin/sh -c "echo standard"
-`
+	desktopContent := "[Desktop Entry]\n" +
+		"Name=Standard X Session\n" +
+		"Exec=" + testCommand + "\n"
 	if err := os.WriteFile(standardPath, []byte(desktopContent), 0644); err != nil {
 		t.Fatal(err)
 	}

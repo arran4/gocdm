@@ -22,6 +22,7 @@ func TestDiscoverSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
+	testCommand := setupPathExecutable(t, tmpDir)
 
 	// Directory structure
 	x11Dir := filepath.Join(tmpDir, "etc", "X11", "Sessions")
@@ -43,19 +44,17 @@ func TestDiscoverSessions(t *testing.T) {
 	}
 
 	// 2. Standard XSession .desktop
-	desktopContent := `[Desktop Entry]
-Name=Standard X Session
-Exec=/bin/sh -c "echo standard"
-`
+	desktopContent := "[Desktop Entry]\n" +
+		"Name=Standard X Session\n" +
+		"Exec=" + testCommand + "\n"
 	if err := os.WriteFile(filepath.Join(xsessionsDir, "standard.desktop"), []byte(desktopContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Wayland Session .desktop
-	waylandContent := `[Desktop Entry]
-Name=Wayland Session
-Exec=/bin/sh -c "echo wayland"
-`
+	waylandContent := "[Desktop Entry]\n" +
+		"Name=Wayland Session\n" +
+		"Exec=" + testCommand + "\n"
 	if err := os.WriteFile(filepath.Join(waylandSessionsDir, "wayland.desktop"), []byte(waylandContent), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -66,10 +65,9 @@ Exec=/bin/sh -c "echo wayland"
 	}
 
 	// 5. User Custom Wayland Session
-	userWaylandContent := `[Desktop Entry]
-Name=User Wayland
-Exec=/bin/sh -c "echo userwayland"
-`
+	userWaylandContent := "[Desktop Entry]\n" +
+		"Name=User Wayland\n" +
+		"Exec=" + testCommand + "\n"
 	if err := os.WriteFile(filepath.Join(userConfigWayland, "user-wayland.desktop"), []byte(userWaylandContent), 0644); err != nil {
 		t.Fatal(err)
 	}
