@@ -1,10 +1,8 @@
-//go:build !windows
-// +build !windows
-
-package main
+package cli
 
 import (
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -17,7 +15,7 @@ func TestRunHelp(t *testing.T) {
 	}
 
 	// We can't prevent flag from printing to stderr, but we can verify exit code.
-	run([]string{"-help"}, mockExit)
+	Run([]string{"-help"}, mockExit)
 
 	if !exited {
 		t.Error("Expected exit(0) for -help, but did not exit")
@@ -36,7 +34,7 @@ func TestRunVersion(t *testing.T) {
 		code = c
 	}
 
-	run([]string{"-version"}, mockExit)
+	Run([]string{"-version"}, mockExit)
 
 	if !exited {
 		t.Error("Expected exit(0) for -version, but did not exit")
@@ -47,9 +45,9 @@ func TestRunVersion(t *testing.T) {
 }
 
 func TestValidateTTYNonDryRunRequiresTerminal(t *testing.T) {
-	original := isTerminal
-	t.Cleanup(func() { isTerminal = original })
-	isTerminal = func(fd int) bool { return false }
+	original := IsTerminal
+	t.Cleanup(func() { IsTerminal = original })
+	IsTerminal = func(fd int) bool { return false }
 
 	err := validateTTY(false)
 	if err == nil {
@@ -58,9 +56,9 @@ func TestValidateTTYNonDryRunRequiresTerminal(t *testing.T) {
 }
 
 func TestValidateTTYDryRunSkipsTerminalRequirement(t *testing.T) {
-	original := isTerminal
-	t.Cleanup(func() { isTerminal = original })
-	isTerminal = func(fd int) bool { return false }
+	original := IsTerminal
+	t.Cleanup(func() { IsTerminal = original })
+	IsTerminal = func(fd int) bool { return false }
 
 	if err := validateTTY(true); err != nil {
 		t.Fatalf("expected dry-run TTY validation to pass, got %v", err)
@@ -73,21 +71,21 @@ func mockEnvFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	origPasswdFilePath := passwdFilePath
-	origPamEnvConfPath := pamEnvConfPath
-	passwdFilePath = tmpDir + "/passwd"
-	pamEnvConfPath = tmpDir + "/pam_env.conf"
+	origPasswdFilePath := PasswdFilePath
+	origPamEnvConfPath := PamEnvConfPath
+	PasswdFilePath = tmpDir + "/passwd"
+	PamEnvConfPath = tmpDir + "/pam_env.conf"
 
-	if err := os.WriteFile(passwdFilePath, []byte(currentUsername()+":x:1000:1000:User:/home/user:/bin/sh\n"), 0o644); err != nil {
+	if err := os.WriteFile(PasswdFilePath, []byte(currentUsername()+":x:1000:1000:User:/home/user:/bin/sh\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(pamEnvConfPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(PamEnvConfPath, []byte(""), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Cleanup(func() {
-		passwdFilePath = origPasswdFilePath
-		pamEnvConfPath = origPamEnvConfPath
+		PasswdFilePath = origPasswdFilePath
+		PamEnvConfPath = origPamEnvConfPath
 		os.RemoveAll(tmpDir)
 	})
 }
@@ -115,7 +113,7 @@ func TestRunDryRunNoSessions(t *testing.T) {
 		code = c
 	}
 
-	run([]string{"-dry-run"}, mockExit)
+	Run([]string{"-dry-run"}, mockExit)
 
 	// Since there are no sessions, it should exit(1) with "No sessions found."
 	if !exited {
@@ -139,7 +137,7 @@ func TestRunUnknownFlag(t *testing.T) {
 	// We can't change it easily without returning the fs from a helper function, or modifying run signature.
 	// Let's just accept the output or ignore it.
 
-	run([]string{"-unknown-flag"}, mockExit)
+	Run([]string{"-unknown-flag"}, mockExit)
 
 	if !exited {
 		t.Error("Expected exit(2) for unknown flag, but did not exit")
@@ -182,7 +180,7 @@ flaglist=("W")`
 	os.Stdout = w
 
 	// Should do dry run and return successfully
-	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+	Run([]string{"-config", configPath, "-dry-run"}, mockExit)
 
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -231,7 +229,7 @@ flaglist=("C")`
 	}
 
 	// Should do dry run and return successfully
-	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+	Run([]string{"-config", configPath, "-dry-run"}, mockExit)
 
 	if exited {
 		t.Errorf("Expected dry run to return without exit, but exited with %d", code)
@@ -266,7 +264,7 @@ flaglist=("X")`
 	}
 
 	// Should do dry run and return successfully
-	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+	Run([]string{"-config", configPath, "-dry-run"}, mockExit)
 
 	if exited {
 		t.Errorf("Expected dry run to return without exit, but exited with %d", code)
@@ -300,7 +298,7 @@ flaglist=("C")`
 		code = c
 	}
 
-	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+	Run([]string{"-config", configPath, "-dry-run"}, mockExit)
 
 	if !exited || code != 1 {
 		t.Errorf("Expected exit(1) for empty command, got exited=%v code=%d", exited, code)
@@ -316,7 +314,7 @@ func TestRunInvalidConfig(t *testing.T) {
 		code = c
 	}
 
-	run([]string{"-config", "/nonexistent/path/that/will/fail"}, mockExit)
+	Run([]string{"-config", "/nonexistent/path/that/will/fail"}, mockExit)
 
 	if !exited || code != 1 {
 		t.Errorf("Expected exit(1) for invalid config, got exited=%v code=%d", exited, code)
@@ -336,14 +334,28 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 	})
 
 	// Create a mock xdpyinfo that exits 0 to simulate active display
-	xdpyinfoPath := tmpDir + "/xdpyinfo"
-	if err := os.WriteFile(xdpyinfoPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	xdpyinfoName := "xdpyinfo"
+	ttyName := "tty"
+	var xdpyinfoContent, ttyContent []byte
+
+	if runtime.GOOS == "windows" {
+		xdpyinfoName += ".bat"
+		ttyName += ".bat"
+		xdpyinfoContent = []byte("@echo off\r\nexit /b 0\r\n")
+		ttyContent = []byte("@echo off\r\necho /dev/tty7\r\nexit /b 0\r\n")
+	} else {
+		xdpyinfoContent = []byte("#!/bin/sh\nexit 0\n")
+		ttyContent = []byte("#!/bin/sh\necho /dev/tty7\n")
+	}
+
+	xdpyinfoPath := tmpDir + "/" + xdpyinfoName
+	if err := os.WriteFile(xdpyinfoPath, xdpyinfoContent, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a mock tty for GetVT("keep") just in case
-	ttyPath := tmpDir + "/tty"
-	if err := os.WriteFile(ttyPath, []byte("#!/bin/sh\necho /dev/tty7\nexit 0\n"), 0o755); err != nil {
+	ttyPath := tmpDir + "/" + ttyName
+	if err := os.WriteFile(ttyPath, ttyContent, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -374,7 +386,7 @@ xtty=keep`
 	os.Stdout = w
 
 	// This tests the dry run logic with locktty parsed and mock xdpyinfo success
-	run([]string{"-config", configPath, "-dry-run"}, mockExit)
+	Run([]string{"-config", configPath, "-dry-run"}, mockExit)
 
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
