@@ -18,6 +18,9 @@ import (
 
 var version = "dev"
 var isTerminal = term.IsTerminal
+// TODO figure out how to support cygwin/wsl for parsing /etc/passwd and pam_env.conf properly
+var passwdFilePath = "/etc/passwd"
+var pamEnvConfPath = "/etc/security/pam_env.conf"
 
 func main() {
 	run(os.Args[1:], os.Exit)
@@ -159,7 +162,7 @@ func run(args []string, exit func(int)) {
 		username = promptedUser
 	}
 
-	sessionEnv, err := config.BuildSessionEnv(os.Environ(), username, "/etc/passwd", "/etc/security/pam_env.conf")
+	sessionEnv, err := config.BuildSessionEnv(os.Environ(), username, passwdFilePath, pamEnvConfPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to build secure session environment: %v\n", err)
 		sessionEnv = os.Environ()
