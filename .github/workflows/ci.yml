@@ -129,10 +129,10 @@ jobs:
 
       - name: Run GoReleaser
         if: ${{ matrix.os == 'ubuntu-latest' && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'release')) }}
-        uses: goreleaser/goreleaser-action@v5
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          version: "~> v2"
           # If triggered by tag, it's a real release. If manual, enforce snapshot unless specified otherwise?
           # User asked to "keep both options open" for manual dispatch.
           # If action=release AND release_mode=release, run real release.
