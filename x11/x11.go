@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-var execCommand = exec.Command
+var ExecCommand = exec.Command
 
 // IsDisplayActive checks if the given display number is active.
 func IsDisplayActive(display int) bool {
-	cmd := execCommand("xdpyinfo", "-display", fmt.Sprintf(":%d.0", display))
+	cmd := ExecCommand("xdpyinfo", "-display", fmt.Sprintf(":%d.0", display))
 	output, _ := cmd.CombinedOutput()
 
 	// If the command succeeds, the display is active.
@@ -31,7 +31,7 @@ func IsDisplayActive(display int) bool {
 
 // SwitchVT switches the virtual terminal to the given VT number.
 func SwitchVT(vt string) error {
-	cmd := execCommand("chvt", vt)
+	cmd := ExecCommand("chvt", vt)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to switch to VT %s: %w", vt, err)
 	}
@@ -41,7 +41,7 @@ func SwitchVT(vt string) error {
 // FindFreeDisplay finds the first available X display number starting from 0.
 func FindFreeDisplay() (int, error) {
 	for i := 0; i < 7; i++ {
-		cmd := execCommand("xdpyinfo", "-display", fmt.Sprintf(":%d.0", i))
+		cmd := ExecCommand("xdpyinfo", "-display", fmt.Sprintf(":%d.0", i))
 		output, _ := cmd.CombinedOutput()
 
 		// If command succeeded, display is active
@@ -67,7 +67,7 @@ func FindFreeDisplay() (int, error) {
 func GetVT(xtty string, display int) (string, error) {
 	if xtty == "keep" {
 		// Use current TTY
-		cmd := execCommand("tty")
+		cmd := ExecCommand("tty")
 		out, err := cmd.Output()
 		if err != nil {
 			return "", err
@@ -118,7 +118,7 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 
 	// Create command
 	// We use Setsid to create a new session
-	cmd := execCommand("startx", cmdArgs...)
+	cmd := ExecCommand("startx", cmdArgs...)
 	cmd.SysProcAttr = newSysProcAttr()
 	if len(env) > 0 {
 		cmd.Env = append([]string{}, env...)
