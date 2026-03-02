@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/arran4/gocdm/x11"
 	"os"
+	"github.com/arran4/gocdm/x11"
+	"os"
 	"os/exec"
 	"testing"
 )
@@ -342,12 +344,9 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", "MOCK_TTY_KEEP=1")
 		return cmd
 	}
-
-	// Prepend tmpDir to PATH so our mocks are found
-	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("startx")
@@ -414,19 +413,24 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 
-	cmd := args[0]
+	cmd, args := args[0], args[1:]
 	if cmd == "xdpyinfo" {
-		// Simulates xdpyinfo success (active display)
+		if os.Getenv("MOCK_XDPYINFO_FAIL") == "1" {
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 	if cmd == "tty" {
-		// Output what the test expects: /dev/tty7
-		fmt.Println("/dev/tty7")
-		os.Exit(0)
+		if os.Getenv("MOCK_TTY_KEEP") == "1" {
+			fmt.Println("/dev/tty7")
+			os.Exit(0)
+		}
+		os.Exit(1)
 	}
 	if cmd == "chvt" {
 		os.Exit(0)
 	}
-	// default
-	os.Exit(1)
+	if cmd == "startx" {
+		os.Exit(0)
+	}
 }
