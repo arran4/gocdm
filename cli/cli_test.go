@@ -360,7 +360,7 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 	}
 
 	// Prepend tmpDir to PATH so our mocks are found
-	t.Setenv("PATH", tmpDir+":"+os.Getenv("PATH"))
+	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("startx")
