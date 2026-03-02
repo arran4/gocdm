@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"github.com/arran4/gocdm/x11"
 	"os"
-	"github.com/arran4/gocdm/x11"
-	"os"
 	"os/exec"
 	"testing"
 )
@@ -413,7 +411,7 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 
-	cmd, args := args[0], args[1:]
+	cmd := args[0]
 	if cmd == "xdpyinfo" {
 		if os.Getenv("MOCK_XDPYINFO_FAIL") == "1" {
 			os.Exit(1)
