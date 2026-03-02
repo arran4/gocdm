@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"github.com/arran4/gocdm/x11"
 	"os"
-	"github.com/arran4/gocdm/x11"
-	"os"
 	"os/exec"
 	"testing"
 )
