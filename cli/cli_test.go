@@ -346,17 +346,6 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 		return cmd
 	}
 
-	xdpyinfoPath := tmpDir + "/" + xdpyinfoName
-	if err := os.WriteFile(xdpyinfoPath, xdpyinfoContent, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a mock tty for GetVT("keep") just in case
-	ttyPath := tmpDir + "/" + ttyName
-	if err := os.WriteFile(ttyPath, ttyContent, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
 	// Prepend tmpDir to PATH so our mocks are found
 	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -425,7 +414,7 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 
-	cmd, args := args[0], args[1:]
+	cmd := args[0]
 	if cmd == "xdpyinfo" {
 		// Simulates xdpyinfo success (active display)
 		os.Exit(0)
