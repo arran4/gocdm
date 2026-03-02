@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"fmt"
+	"github.com/arran4/gocdm/x11"
 	"os"
-	"runtime"
+	"os/exec"
 	"testing"
 )
 
@@ -333,34 +335,16 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 		}
 	})
 
-	// Create a mock xdpyinfo that exits 0 to simulate active display
-	xdpyinfoName := "xdpyinfo"
-	ttyName := "tty"
-	var xdpyinfoContent, ttyContent []byte
+	origExecCommand := x11.ExecCommand
+	defer func() { x11.ExecCommand = origExecCommand }()
 
-	if runtime.GOOS == "windows" {
-		xdpyinfoName += ".bat"
-		ttyName += ".bat"
-		xdpyinfoContent = []byte("@echo off\r\nexit /b 0\r\n")
-		ttyContent = []byte("@echo off\r\necho /dev/tty7\r\nexit /b 0\r\n")
-	} else {
-		xdpyinfoContent = []byte("#!/bin/sh\nexit 0\n")
-		ttyContent = []byte("#!/bin/sh\necho /dev/tty7\n")
+	x11.ExecCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+		return cmd
 	}
-
-	xdpyinfoPath := tmpDir + "/" + xdpyinfoName
-	if err := os.WriteFile(xdpyinfoPath, xdpyinfoContent, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a mock tty for GetVT("keep") just in case
-	ttyPath := tmpDir + "/" + ttyName
-	if err := os.WriteFile(ttyPath, ttyContent, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// Prepend tmpDir to PATH so our mocks are found
-	t.Setenv("PATH", tmpDir+":"+os.Getenv("PATH"))
 
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("startx")
@@ -405,4 +389,41 @@ xtty=keep`
 	if output != expectedOutput {
 		t.Errorf("Expected output %q, got %q", expectedOutput, output)
 	}
+}
+
+func TestHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	defer os.Exit(0)
+
+	args := os.Args
+	for len(args) > 0 {
+		if args[0] == "--" {
+			args = args[1:]
+			break
+		}
+		args = args[1:]
+	}
+
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "No command\n")
+		os.Exit(2)
+	}
+
+	cmd, args := args[0], args[1:]
+	if cmd == "xdpyinfo" {
+		// Simulates xdpyinfo success (active display)
+		os.Exit(0)
+	}
+	if cmd == "tty" {
+		// Output what the test expects: /dev/tty7
+		fmt.Println("/dev/tty7")
+		os.Exit(0)
+	}
+	if cmd == "chvt" {
+		os.Exit(0)
+	}
+	// default
+	os.Exit(1)
 }

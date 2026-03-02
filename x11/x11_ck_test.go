@@ -8,11 +8,11 @@ import (
 )
 
 func TestLaunchXSessionConsoleKit(t *testing.T) {
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
+	origExecCommand := ExecCommand
+	defer func() { ExecCommand = origExecCommand }()
 
 	var capturedArgs []string
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		capturedArgs = append([]string{name}, arg...)
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)

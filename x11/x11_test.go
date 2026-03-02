@@ -8,11 +8,11 @@ import (
 )
 
 func TestFindFreeDisplay(t *testing.T) {
-	// Mock execCommand
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
+	// Mock ExecCommand
+	origExecCommand := ExecCommand
+	defer func() { ExecCommand = origExecCommand }()
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
@@ -92,10 +92,10 @@ func TestHelperProcess(t *testing.T) {
 }
 
 func TestGetVT(t *testing.T) {
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
+	origExecCommand := ExecCommand
+	defer func() { ExecCommand = origExecCommand }()
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
@@ -129,10 +129,10 @@ func TestGetVT(t *testing.T) {
 }
 
 func TestLaunchXSession(t *testing.T) {
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
+	origExecCommand := ExecCommand
+	defer func() { ExecCommand = origExecCommand }()
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
@@ -153,10 +153,10 @@ func TestLaunchXSession(t *testing.T) {
 }
 
 func TestLaunchXSessionSwitchVTFailure(t *testing.T) {
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
+	origExecCommand := ExecCommand
+	defer func() { ExecCommand = origExecCommand }()
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
@@ -177,10 +177,10 @@ func TestLaunchXSessionSwitchVTFailure(t *testing.T) {
 }
 
 func TestIsDisplayActive(t *testing.T) {
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
+	origExecCommand := ExecCommand
+	defer func() { ExecCommand = origExecCommand }()
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
@@ -204,10 +204,10 @@ func TestIsDisplayActive(t *testing.T) {
 }
 
 func TestSwitchVT(t *testing.T) {
-	origExecCommand := execCommand
-	defer func() { execCommand = origExecCommand }()
+	origExecCommand := ExecCommand
+	defer func() { ExecCommand = origExecCommand }()
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
