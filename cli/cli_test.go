@@ -2,12 +2,11 @@ package cli
 
 import (
 	"fmt"
-	"os/exec"
-)
-
-import (
 	"github.com/arran4/gocdm/x11"
 	"os"
+	"github.com/arran4/gocdm/x11"
+	"os"
+	"os/exec"
 	"testing"
 )
 
@@ -339,7 +338,7 @@ func TestRunXSessionLockTTYActive(t *testing.T) {
 	})
 
 	origExecCommand := x11.ExecCommand
-	t.Cleanup(func() { x11.ExecCommand = origExecCommand })
+	defer func() { x11.ExecCommand = origExecCommand }()
 
 	x11.ExecCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
