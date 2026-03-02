@@ -59,6 +59,10 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Install libpam0g-dev
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+
       - name: Run golangci-lint
         if: matrix.os == 'ubuntu-latest'
         uses: golangci/golangci-lint-action@v3
