@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-var ExecLookPath = exec.LookPath
-
 var (
 	X11SessionsDir     = "/etc/X11/Sessions"
 	XSessionsDir       = "/usr/share/xsessions"
@@ -25,7 +23,21 @@ type Session struct {
 	Path string
 }
 
+type Discoverer struct {
+	ExecLookPath func(string) (string, error)
+}
+
+func NewDiscoverer() *Discoverer {
+	return &Discoverer{
+		ExecLookPath: exec.LookPath,
+	}
+}
+
 func DiscoverSessions(userHome string) ([]Session, error) {
+	return NewDiscoverer().Discover(userHome)
+}
+
+func (d *Discoverer) Discover(userHome string) ([]Session, error) {
 	var sessions []Session
 	seen := make(map[string]bool)
 
@@ -39,7 +51,7 @@ func DiscoverSessions(userHome string) ([]Session, error) {
 
 	// 1. User specific sessions (Highest priority)
 	// ~/.xsession, ~/.xinitrc
-	userSessions, err := discoverUserSessions(userHome)
+	userSessions, err := d.discoverUserSessions(userHome)
 	if err == nil {
 		for _, s := range userSessions {
 			addSession(s)
@@ -47,7 +59,7 @@ func DiscoverSessions(userHome string) ([]Session, error) {
 	}
 
 	// ~/.local/share/xsessions
-	localXSessions, err := discoverCustomSessions(filepath.Join(userHome, ".local", "share", "xsessions"), "X")
+	localXSessions, err := d.discoverCustomSessions(filepath.Join(userHome, ".local", "share", "xsessions"), "X")
 	if err == nil {
 		for _, s := range localXSessions {
 			addSession(s)
@@ -55,7 +67,7 @@ func DiscoverSessions(userHome string) ([]Session, error) {
 	}
 
 	// ~/.config/wayland-sessions
-	localWaylandSessions, err := discoverCustomSessions(filepath.Join(userHome, ".config", "wayland-sessions"), "W")
+	localWaylandSessions, err := d.discoverCustomSessions(filepath.Join(userHome, ".config", "wayland-sessions"), "W")
 	if err == nil {
 		for _, s := range localWaylandSessions {
 			addSession(s)
@@ -64,7 +76,7 @@ func DiscoverSessions(userHome string) ([]Session, error) {
 
 	// 2. System sessions
 	// Try /etc/X11/Sessions (Legacy)
-	legacySessions, err := discoverX11Sessions()
+	legacySessions, err := d.discoverX11Sessions()
 	if err == nil {
 		for _, s := range legacySessions {
 			addSession(s)
@@ -72,7 +84,7 @@ func DiscoverSessions(userHome string) ([]Session, error) {
 	}
 
 	// Try /usr/share/xsessions
-	xSessions, err := discoverXSessions()
+	xSessions, err := d.discoverXSessions()
 	if err == nil {
 		for _, s := range xSessions {
 			addSession(s)
@@ -80,7 +92,7 @@ func DiscoverSessions(userHome string) ([]Session, error) {
 	}
 
 	// Try /usr/share/wayland-sessions
-	wSessions, err := discoverWaylandSessions()
+	wSessions, err := d.discoverWaylandSessions()
 	if err == nil {
 		for _, s := range wSessions {
 			addSession(s)
@@ -95,7 +107,7 @@ func DiscoverSessions(userHome string) ([]Session, error) {
 	return sessions, nil
 }
 
-func discoverUserSessions(home string) ([]Session, error) {
+func (d *Discoverer) discoverUserSessions(home string) ([]Session, error) {
 	var sessions []Session
 
 	checkFile := func(filename, name string) {
@@ -122,7 +134,7 @@ func discoverUserSessions(home string) ([]Session, error) {
 	return sessions, nil
 }
 
-func discoverCustomSessions(dir string, sessionType string) ([]Session, error) {
+func (d *Discoverer) discoverCustomSessions(dir string, sessionType string) ([]Session, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -131,7 +143,7 @@ func discoverCustomSessions(dir string, sessionType string) ([]Session, error) {
 	var sessions []Session
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".desktop") {
-			session, err := parseDesktopFile(filepath.Join(dir, entry.Name()), sessionType)
+			session, err := d.parseDesktopFile(filepath.Join(dir, entry.Name()), sessionType)
 			if err == nil {
 				sessions = append(sessions, session)
 			}
@@ -140,7 +152,7 @@ func discoverCustomSessions(dir string, sessionType string) ([]Session, error) {
 	return sessions, nil
 }
 
-func discoverX11Sessions() ([]Session, error) {
+func (d *Discoverer) discoverX11Sessions() ([]Session, error) {
 	dir := X11SessionsDir
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -162,12 +174,12 @@ func discoverX11Sessions() ([]Session, error) {
 	return sessions, nil
 }
 
-func discoverXSessions() ([]Session, error) {
-	return discoverCustomSessions(XSessionsDir, "X")
+func (d *Discoverer) discoverXSessions() ([]Session, error) {
+	return d.discoverCustomSessions(XSessionsDir, "X")
 }
 
-func discoverWaylandSessions() ([]Session, error) {
-	return discoverCustomSessions(WaylandSessionsDir, "W")
+func (d *Discoverer) discoverWaylandSessions() ([]Session, error) {
+	return d.discoverCustomSessions(WaylandSessionsDir, "W")
 }
 
 // stripFreedesktopExecVariables removes Freedesktop Exec field codes from the command line.
@@ -183,7 +195,7 @@ func stripFreedesktopExecVariables(execCmd string) string {
 	return execCmd
 }
 
-func parseDesktopFile(path string, defaultType string) (Session, error) {
+func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return Session{}, err
@@ -223,7 +235,7 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 
 	// Check TryExec if present
 	if tryExec != "" {
-		if _, err := ExecLookPath(tryExec); err != nil {
+		if _, err := d.ExecLookPath(tryExec); err != nil {
 			return Session{}, fmt.Errorf("TryExec binary not found: %s", tryExec)
 		}
 	}
@@ -237,7 +249,7 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 			bin := cmdParts[0]
 			// Only check if it's an absolute path or in PATH
 			// Some desktop files use full paths, some use binaries in PATH.
-			if _, err := ExecLookPath(bin); err != nil {
+			if _, err := d.ExecLookPath(bin); err != nil {
 				return Session{}, fmt.Errorf("executable not found: %s", bin)
 			}
 		}

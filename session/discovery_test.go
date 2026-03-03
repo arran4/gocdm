@@ -137,12 +137,14 @@ func TestParseDesktopFileErrors(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	d := NewDiscoverer()
+
 	// Missing Exec
 	path1 := filepath.Join(tmpDir, "1.desktop")
 	if err := os.WriteFile(path1, missingExecContent, 0644); err != nil {
 		t.Fatalf("failed writing %s: %v", path1, err)
 	}
-	if _, err := parseDesktopFile(path1, "X"); err == nil {
+	if _, err := d.parseDesktopFile(path1, "X"); err == nil {
 		t.Error("Expected error for missing Exec")
 	}
 
@@ -151,7 +153,7 @@ func TestParseDesktopFileErrors(t *testing.T) {
 	if err := os.WriteFile(path2, missingTryExecContent, 0644); err != nil {
 		t.Fatalf("failed writing %s: %v", path2, err)
 	}
-	if _, err := parseDesktopFile(path2, "X"); err == nil {
+	if _, err := d.parseDesktopFile(path2, "X"); err == nil {
 		t.Error("Expected error for missing TryExec binary")
 	}
 
@@ -160,7 +162,7 @@ func TestParseDesktopFileErrors(t *testing.T) {
 	if err := os.WriteFile(path3, missingExecBinContent, 0644); err != nil {
 		t.Fatalf("failed writing %s: %v", path3, err)
 	}
-	if _, err := parseDesktopFile(path3, "X"); err == nil {
+	if _, err := d.parseDesktopFile(path3, "X"); err == nil {
 		t.Error("Expected error for missing Exec binary")
 	}
 }
