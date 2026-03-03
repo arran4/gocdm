@@ -191,14 +191,25 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 	var execCmd, name, tryExec string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := scanner.Text()
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Exec=") {
-			execCmd = strings.TrimPrefix(line, "Exec=")
-		} else if strings.HasPrefix(line, "Name=") {
-			name = strings.TrimPrefix(line, "Name=")
-		} else if strings.HasPrefix(line, "TryExec=") {
-			tryExec = strings.TrimPrefix(line, "TryExec=")
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		switch {
+		case key == "Exec":
+			execCmd = value
+		case key == "TryExec":
+			tryExec = value
+		case key == "Name":
+			name = value
+		case strings.HasPrefix(key, "Name[") && strings.HasSuffix(key, "]") && name == "":
+			name = value
 		}
 	}
 

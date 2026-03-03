@@ -1,0 +1,3 @@
+[Desktop Entry]
+Name=Quoted Session
+Exec=/bin/sh -lc "printf '%s\\n' hello" %u
