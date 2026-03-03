@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"runtime"
 	"strings"
 
 	"github.com/arran4/gocdm/auth"
@@ -18,6 +19,12 @@ import (
 
 var Version = "dev"
 var IsTerminal = term.IsTerminal
+var NewAuthenticator = func(service string) auth.Authenticator { return auth.NewPAMAuthenticator(service) }
+var PromptCredentials = auth.PromptCredentials
+var ExecLookPath = exec.LookPath
+var DropPrivilegesFn = DropPrivileges
+var ExecProgramFn = ExecProgram
+var LaunchXSessionFn = x11.LaunchXSession
 
 var PasswdFilePath = "/etc/passwd"
 var PamEnvConfPath = "/etc/security/pam_env.conf"
@@ -47,6 +54,11 @@ func Run(args []string, exit func(int)) {
 	}
 
 	var configPath string
+	if *configPathFlag != "" && fs.NArg() > 0 {
+		fmt.Fprintln(os.Stderr, "cannot use both positional config path and -config; use one source")
+		exit(2)
+		return
+	}
 	if *configPathFlag != "" {
 		configPath = *configPathFlag
 	} else if fs.NArg() > 0 {
@@ -142,9 +154,14 @@ func Run(args []string, exit func(int)) {
 	}
 
 	username := currentUsername()
+	if *loginMode && !supportsLoginMode() {
+		fmt.Fprintf(os.Stderr, "-login is not supported on %s (support tier: %s)\n", runtime.GOOS, platformSupportTier())
+		exit(1)
+		return
+	}
 	if *loginMode {
-		authenticator := auth.NewPAMAuthenticator(*pamService)
-		promptedUser, password, err := auth.PromptCredentials(os.Stdin, os.Stdout)
+		authenticator := NewAuthenticator(*pamService)
+		promptedUser, password, err := PromptCredentials(os.Stdin, os.Stdout)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Authentication prompt failed: %v\n", err)
 			exit(1)
@@ -197,14 +214,14 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 		if *loginMode {
-			if err := DropPrivileges(username); err != nil {
+			if err := DropPrivilegesFn(username); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
 				exit(1)
 				return
 			}
 		}
 
-		binary, err := exec.LookPath(bin)
+		binary, err := ExecLookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
 			exit(1)
@@ -215,7 +232,7 @@ func Run(args []string, exit func(int)) {
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 		env = append(env, "XDG_SESSION_TYPE=wayland")
 
-		if err := ExecProgram(binary, append([]string{bin}, args...), env); err != nil {
+		if err := ExecProgramFn(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
 			return
@@ -237,14 +254,14 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 		if *loginMode {
-			if err := DropPrivileges(username); err != nil {
+			if err := DropPrivilegesFn(username); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
 				exit(1)
 				return
 			}
 		}
 
-		binary, err := exec.LookPath(bin)
+		binary, err := ExecLookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
 			exit(1)
@@ -254,7 +271,7 @@ func Run(args []string, exit func(int)) {
 		env := append([]string{}, sessionEnv...)
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
-		if err := ExecProgram(binary, append([]string{bin}, args...), env); err != nil {
+		if err := ExecProgramFn(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
 			return
@@ -262,6 +279,11 @@ func Run(args []string, exit func(int)) {
 
 	case "X":
 		// X program
+		if !supportsXSessions() {
+			fmt.Fprintf(os.Stderr, "X session launch is not supported on %s (support tier: %s)\n", runtime.GOOS, platformSupportTier())
+			exit(1)
+			return
+		}
 
 		// If X is already running and locktty=yes, activate it.
 		if cfg.LockTTY && x11.IsDisplayActive(cfg.Display) {
@@ -326,14 +348,14 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 		if *loginMode {
-			if err := DropPrivileges(username); err != nil {
+			if err := DropPrivilegesFn(username); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
 				exit(1)
 				return
 			}
 		}
 
-		err = x11.LaunchXSession(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, sessionEnv)
+		err = LaunchXSessionFn(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, sessionEnv)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
 			exit(1)

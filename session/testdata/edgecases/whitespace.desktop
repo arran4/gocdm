@@ -1,0 +1,3 @@
+[Desktop Entry]
+   Name   =   Whitespace Session
+  Exec = edge-session --flag %f

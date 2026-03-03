@@ -7,20 +7,35 @@ import (
 	"testing"
 )
 
-func TestFindFreeDisplay(t *testing.T) {
-	// Mock ExecCommand
-	origExecCommand := ExecCommand
-	defer func() { ExecCommand = origExecCommand }()
+type mockExecProxy struct {
+	commandFn  func(name string, arg ...string) *exec.Cmd
+	lookPathFn func(file string) (string, error)
+}
 
-	ExecCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		return cmd
+func (m mockExecProxy) Command(name string, arg ...string) *exec.Cmd {
+	return m.commandFn(name, arg...)
+}
+
+func (m mockExecProxy) LookPath(file string) (string, error) {
+	if m.lookPathFn == nil {
+		return "/mock/" + file, nil
 	}
+	return m.lookPathFn(file)
+}
 
-	// We simulate display 0 is taken (returns 0), display 1 is free (returns 1 and message).
+func helperCommand(name string, arg ...string) *exec.Cmd {
+	cs := []string{"-test.run=TestHelperProcess", "--", name}
+	cs = append(cs, arg...)
+	cmd := exec.Command(os.Args[0], cs...)
+	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+	return cmd
+}
+
+func TestFindFreeDisplay(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
+
 	os.Setenv("MOCK_DISPLAY_STATUS_0", "taken")
 	os.Setenv("MOCK_DISPLAY_STATUS_1", "free")
 	defer func() {
@@ -59,11 +74,10 @@ func TestHelperProcess(t *testing.T) {
 
 	cmd, args := args[0], args[1:]
 	if cmd == "xdpyinfo" {
-		// args: -display :X.0
 		if len(args) < 2 {
 			os.Exit(2)
 		}
-		display := args[1] // :0.0
+		display := args[1]
 		if display == ":0.0" && os.Getenv("MOCK_DISPLAY_STATUS_0") == "taken" {
 			os.Exit(0)
 		}
@@ -71,7 +85,6 @@ func TestHelperProcess(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "xdpyinfo:  unable to open display \"%s\"\n", display)
 			os.Exit(1)
 		}
-		// Default to taken (0) to allow loop to continue if not mocked specifically
 		os.Exit(0)
 	}
 	if cmd == "chvt" {
@@ -86,24 +99,15 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0)
 	}
 	if cmd == "startx" {
-		// Mock startx success
 		os.Exit(0)
 	}
 }
 
 func TestGetVT(t *testing.T) {
-	origExecCommand := ExecCommand
-	defer func() { ExecCommand = origExecCommand }()
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
 
-	ExecCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		return cmd
-	}
-
-	// Test "keep" with valid tty output
 	vt, err := GetVT("keep", 0)
 	if err != nil {
 		t.Fatalf("GetVT keep failed: %v", err)
@@ -112,7 +116,6 @@ func TestGetVT(t *testing.T) {
 		t.Errorf("Expected VT 1, got %s", vt)
 	}
 
-	// Test number format
 	vt, err = GetVT("7", 1)
 	if err != nil {
 		t.Fatalf("GetVT number failed: %v", err)
@@ -121,7 +124,6 @@ func TestGetVT(t *testing.T) {
 		t.Errorf("Expected VT 8, got %s", vt)
 	}
 
-	// Test invalid number format
 	_, err = GetVT("invalid", 1)
 	if err == nil {
 		t.Fatal("Expected error for invalid xtty format")
@@ -129,16 +131,9 @@ func TestGetVT(t *testing.T) {
 }
 
 func TestLaunchXSession(t *testing.T) {
-	origExecCommand := ExecCommand
-	defer func() { ExecCommand = origExecCommand }()
-
-	ExecCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		return cmd
-	}
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
 
 	tmpLog, err := os.CreateTemp("", "startx_log")
 	if err != nil {
@@ -153,16 +148,15 @@ func TestLaunchXSession(t *testing.T) {
 }
 
 func TestLaunchXSessionSwitchVTFailure(t *testing.T) {
-	origExecCommand := ExecCommand
-	defer func() { ExecCommand = origExecCommand }()
-
-	ExecCommand = func(name string, arg ...string) *exec.Cmd {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
 		cmd := exec.Command(os.Args[0], cs...)
 		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", "MOCK_CHVT_FAIL=1")
 		return cmd
-	}
+	}}
 
 	tmpLog, err := os.CreateTemp("", "startx_log")
 	if err != nil {
@@ -177,46 +171,87 @@ func TestLaunchXSessionSwitchVTFailure(t *testing.T) {
 }
 
 func TestIsDisplayActive(t *testing.T) {
-	origExecCommand := ExecCommand
-	defer func() { ExecCommand = origExecCommand }()
-
-	ExecCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		return cmd
-	}
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
 
 	os.Setenv("MOCK_DISPLAY_STATUS_0", "taken")
 	defer os.Unsetenv("MOCK_DISPLAY_STATUS_0")
-
 	if !IsDisplayActive(0) {
 		t.Errorf("Expected display 0 to be active")
 	}
 
 	os.Setenv("MOCK_DISPLAY_STATUS_1", "free")
 	defer os.Unsetenv("MOCK_DISPLAY_STATUS_1")
-
 	if IsDisplayActive(1) {
 		t.Errorf("Expected display 1 to be inactive")
 	}
 }
 
 func TestSwitchVT(t *testing.T) {
-	origExecCommand := ExecCommand
-	defer func() { ExecCommand = origExecCommand }()
-
-	ExecCommand = func(name string, arg ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestHelperProcess", "--", name}
-		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		return cmd
-	}
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
 
 	err := SwitchVT("7")
 	if err != nil {
 		t.Errorf("Expected SwitchVT to succeed, got err: %v", err)
+	}
+}
+
+func TestFindFreeDisplayMissingTool(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{
+		commandFn: helperCommand,
+		lookPathFn: func(file string) (string, error) {
+			return "", fmt.Errorf("not found")
+		},
+	}
+
+	_, err := FindFreeDisplay()
+	if err == nil {
+		t.Fatal("expected missing tool error")
+	}
+}
+
+func TestLaunchXSessionMissingTool(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{
+		commandFn: helperCommand,
+		lookPathFn: func(file string) (string, error) {
+			if file == "startx" {
+				return "", fmt.Errorf("not found")
+			}
+			return "/mock/" + file, nil
+		},
+	}
+
+	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	if err == nil {
+		t.Fatal("expected missing startx error")
+	}
+}
+
+func TestLaunchXSessionAltStartXDeprecated(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
+
+	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, true, "/tmp/test.log", nil, nil)
+	if err == nil {
+		t.Fatal("expected altStartX deprecation error")
+	}
+}
+
+func TestLaunchXSessionCKTimeoutDeprecated(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
+
+	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", true, 60, false, "/tmp/test.log", nil, nil)
+	if err == nil {
+		t.Fatal("expected ckTimeout deprecation error")
 	}
 }

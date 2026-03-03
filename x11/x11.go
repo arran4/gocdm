@@ -8,11 +8,35 @@ import (
 	"strings"
 )
 
+type execProxy interface {
+	Command(name string, arg ...string) *exec.Cmd
+	LookPath(file string) (string, error)
+}
+
+type realExecProxy struct{}
+
 var ExecCommand = exec.Command
+
+func (realExecProxy) Command(name string, arg ...string) *exec.Cmd {
+	return ExecCommand(name, arg...)
+}
+
+func (realExecProxy) LookPath(file string) (string, error) {
+	return exec.LookPath(file)
+}
+
+var osExec execProxy = realExecProxy{}
+
+func ensureTool(tool string) error {
+	if _, err := osExec.LookPath(tool); err != nil {
+		return fmt.Errorf("required tool %q not found in PATH", tool)
+	}
+	return nil
+}
 
 // IsDisplayActive checks if the given display number is active.
 func IsDisplayActive(display int) bool {
-	cmd := ExecCommand("xdpyinfo", "-display", fmt.Sprintf(":%d.0", display))
+	cmd := osExec.Command("xdpyinfo", "-display", fmt.Sprintf(":%d.0", display))
 	output, _ := cmd.CombinedOutput()
 
 	// If the command succeeds, the display is active.
@@ -31,7 +55,7 @@ func IsDisplayActive(display int) bool {
 
 // SwitchVT switches the virtual terminal to the given VT number.
 func SwitchVT(vt string) error {
-	cmd := ExecCommand("chvt", vt)
+	cmd := osExec.Command("chvt", vt)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to switch to VT %s: %w", vt, err)
 	}
@@ -40,8 +64,12 @@ func SwitchVT(vt string) error {
 
 // FindFreeDisplay finds the first available X display number starting from 0.
 func FindFreeDisplay() (int, error) {
+	if err := ensureTool("xdpyinfo"); err != nil {
+		return -1, fmt.Errorf("cannot probe X displays: %w", err)
+	}
+
 	for i := 0; i < 7; i++ {
-		cmd := ExecCommand("xdpyinfo", "-display", fmt.Sprintf(":%d.0", i))
+		cmd := osExec.Command("xdpyinfo", "-display", fmt.Sprintf(":%d.0", i))
 		output, _ := cmd.CombinedOutput()
 
 		// If command succeeded, display is active
@@ -67,7 +95,7 @@ func FindFreeDisplay() (int, error) {
 func GetVT(xtty string, display int) (string, error) {
 	if xtty == "keep" {
 		// Use current TTY
-		cmd := ExecCommand("tty")
+		cmd := osExec.Command("tty")
 		out, err := cmd.Output()
 		if err != nil {
 			return "", err
@@ -96,18 +124,32 @@ func GetVT(xtty string, display int) (string, error) {
 // startXLog: path to log file.
 // serverArgs: additional arguments for X server.
 func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTimeout int, altStartX bool, startXLog string, serverArgs []string, env []string) error {
+	if altStartX {
+		return fmt.Errorf("altStartX is deprecated and not supported; set altstartx=no")
+	}
+	if consoleKit && ckTimeout != 30 {
+		return fmt.Errorf("ckTimeout is deprecated and not supported; set cktimeout=30")
+	}
+	if err := ensureTool("chvt"); err != nil {
+		return err
+	}
+	if err := ensureTool("startx"); err != nil {
+		return err
+	}
+	if consoleKit {
+		if err := ensureTool("ck-launch-session"); err != nil {
+			return err
+		}
+	}
+
 	if err := SwitchVT(vt); err != nil {
 		return fmt.Errorf("failed VT handoff before launching X session: %w", err)
 	}
 
-	// Construct X server arguments
-	// e.g. :0 -nolisten tcp vt7
 	xArgs := []string{fmt.Sprintf(":%d", display)}
 	xArgs = append(xArgs, serverArgs...)
 	xArgs = append(xArgs, "vt"+vt)
 
-	// Construct startx arguments
-	// startx client -- server_args
 	cmdArgs := []string{}
 	if consoleKit {
 		cmdArgs = append(cmdArgs, "ck-launch-session")
@@ -116,20 +158,16 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	cmdArgs = append(cmdArgs, "--")
 	cmdArgs = append(cmdArgs, xArgs...)
 
-	// Create command
-	// We use Setsid to create a new session
-	cmd := ExecCommand("startx", cmdArgs...)
+	cmd := osExec.Command("startx", cmdArgs...)
 	cmd.SysProcAttr = newSysProcAttr()
 	if len(env) > 0 {
 		cmd.Env = append([]string{}, env...)
 	}
 
-	// Logging
 	outfile, err := os.OpenFile(startXLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file %s: %w", startXLog, err)
 	}
-	// We pass the file to the child process. It's safe to close in parent after Start.
 	defer outfile.Close()
 	cmd.Stdout = outfile
 	cmd.Stderr = outfile
@@ -138,6 +176,5 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 		return fmt.Errorf("failed to start session: %w", err)
 	}
 
-	// We detach and return. The process continues running.
 	return nil
 }

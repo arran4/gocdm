@@ -2,10 +2,8 @@ package config
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -27,132 +25,197 @@ type Config struct {
 	ServerArgs []string
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	// If configPath is empty, try default locations
-	if configPath == "" {
-		home, _ := os.UserHomeDir()
-		xdgConfig := os.Getenv("XDG_CONFIG_HOME")
-		if xdgConfig == "" {
-			xdgConfig = filepath.Join(home, ".config")
-		}
-
-		paths := []string{
-			filepath.Join(home, ".cdmrc"),
-			filepath.Join(xdgConfig, "cdm", "cdmrc"),
-			"/etc/cdmrc",
-		}
-
-		for _, p := range paths {
-			if _, err := os.Stat(p); err == nil {
-				configPath = p
-				break
-			}
-		}
+func DiscoverConfigPath() string {
+	home, _ := os.UserHomeDir()
+	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
+	if xdgConfig == "" {
+		xdgConfig = filepath.Join(home, ".config")
 	}
 
+	paths := []string{
+		filepath.Join(home, ".cdmrc"),
+		filepath.Join(xdgConfig, "cdm", "cdmrc"),
+		"/etc/cdmrc",
+	}
+
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+func LoadConfig(configPath string) (*Config, error) {
 	if configPath == "" {
-		// No config found, return defaults
+		configPath = DiscoverConfigPath()
+	}
+	if configPath == "" {
 		return DefaultConfig(), nil
 	}
 
-	cmdStr := `
-source "$1"
-echo "dialogrc=$dialogrc"
-echo "countfrom=$countfrom"
-echo "display=$display"
-echo "xtty=$xtty"
-echo "locktty=$locktty"
-echo "consolekit=$consolekit"
-echo "cktimeout=$cktimeout"
-echo "altstartx=$altstartx"
-echo "startxlog=$startxlog"
-
-for i in "${!binlist[@]}"; do echo "binlist_$i=${binlist[$i]}"; done
-for i in "${!namelist[@]}"; do echo "namelist_$i=${namelist[$i]}"; done
-for i in "${!flaglist[@]}"; do echo "flaglist_$i=${flaglist[$i]}"; done
-for i in "${!serverargs[@]}"; do echo "serverargs_$i=${serverargs[$i]}"; done
-`
-
-	cmd := exec.Command("bash", "-c", cmdStr, "--", configPath)
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to source config: %w", err)
-	}
-
 	cfg := DefaultConfig()
-	scanner := bufio.NewScanner(bytes.NewReader(output))
+	if err := parseConfigFile(configPath, cfg); err != nil {
+		return nil, err
+	}
+	if err := validateSessionLists(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
 
-	// Temporary maps for arrays
-	binListMap := make(map[int]string)
-	nameListMap := make(map[int]string)
-	flagListMap := make(map[int]string)
-	serverArgsMap := make(map[int]string)
+func parseConfigFile(path string, cfg *Config) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open config: %w", err)
+	}
+	defer f.Close()
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	s := bufio.NewScanner(f)
+	lineNo := 0
+	for s.Scan() {
+		lineNo++
+		line := strings.TrimSpace(s.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		key := parts[0]
-		value := parts[1]
-
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
 		switch key {
 		case "dialogrc":
-			cfg.DialogRC = value
+			cfg.DialogRC = trimShellQuotes(value)
 		case "countfrom":
-			if v, err := strconv.Atoi(value); err == nil {
+			if v, err := strconv.Atoi(trimShellQuotes(value)); err == nil {
 				cfg.CountFrom = v
 			}
 		case "display":
-			if v, err := strconv.Atoi(value); err == nil {
+			if v, err := strconv.Atoi(trimShellQuotes(value)); err == nil {
 				cfg.Display = v
 			}
 		case "xtty":
-			cfg.XTTY = value
+			cfg.XTTY = trimShellQuotes(value)
 		case "locktty":
-			cfg.LockTTY = parseBool(value)
+			cfg.LockTTY = parseBool(trimShellQuotes(value))
 		case "consolekit":
-			cfg.ConsoleKit = parseBool(value)
+			cfg.ConsoleKit = parseBool(trimShellQuotes(value))
 		case "cktimeout":
-			if v, err := strconv.Atoi(value); err == nil {
+			if v, err := strconv.Atoi(trimShellQuotes(value)); err == nil {
 				cfg.CKTimeout = v
 			}
 		case "altstartx":
-			cfg.AltStartX = parseBool(value)
+			cfg.AltStartX = parseBool(trimShellQuotes(value))
 		case "startxlog":
-			cfg.StartXLog = value
-		default:
-			if strings.HasPrefix(key, "binlist_") {
-				idx, _ := strconv.Atoi(strings.TrimPrefix(key, "binlist_"))
-				binListMap[idx] = value
-			} else if strings.HasPrefix(key, "namelist_") {
-				idx, _ := strconv.Atoi(strings.TrimPrefix(key, "namelist_"))
-				nameListMap[idx] = value
-			} else if strings.HasPrefix(key, "flaglist_") {
-				idx, _ := strconv.Atoi(strings.TrimPrefix(key, "flaglist_"))
-				flagListMap[idx] = value
-			} else if strings.HasPrefix(key, "serverargs_") {
-				idx, _ := strconv.Atoi(strings.TrimPrefix(key, "serverargs_"))
-				serverArgsMap[idx] = value
+			cfg.StartXLog = trimShellQuotes(value)
+		case "binlist", "namelist", "flaglist", "serverargs":
+			arr, err := parseShellArray(value)
+			if err != nil {
+				return fmt.Errorf("config line %d (%s): %w", lineNo, key, err)
+			}
+			switch key {
+			case "binlist":
+				cfg.BinList = arr
+			case "namelist":
+				cfg.NameList = arr
+			case "flaglist":
+				cfg.FlagList = arr
+			case "serverargs":
+				cfg.ServerArgs = arr
 			}
 		}
 	}
+	if err := s.Err(); err != nil {
+		return fmt.Errorf("scan config: %w", err)
+	}
+	return nil
+}
 
-	if len(binListMap) > 0 {
-		cfg.BinList = mapToSlice(binListMap)
+func validateSessionLists(cfg *Config) error {
+	if len(cfg.BinList) == 0 {
+		return nil
 	}
-	if len(nameListMap) > 0 {
-		cfg.NameList = mapToSlice(nameListMap)
+	if len(cfg.NameList) > 0 && len(cfg.NameList) != len(cfg.BinList) {
+		return fmt.Errorf("namelist length %d does not match binlist length %d", len(cfg.NameList), len(cfg.BinList))
 	}
-	if len(flagListMap) > 0 {
-		cfg.FlagList = mapToSlice(flagListMap)
+	if len(cfg.FlagList) > 0 && len(cfg.FlagList) != len(cfg.BinList) {
+		return fmt.Errorf("flaglist length %d does not match binlist length %d", len(cfg.FlagList), len(cfg.BinList))
 	}
-	if len(serverArgsMap) > 0 {
-		cfg.ServerArgs = mapToSlice(serverArgsMap)
-	}
+	return nil
+}
 
-	return cfg, nil
+func parseShellArray(value string) ([]string, error) {
+	v := strings.TrimSpace(value)
+	if !strings.HasPrefix(v, "(") || !strings.HasSuffix(v, ")") {
+		return nil, fmt.Errorf("malformed array: expected parentheses")
+	}
+	inner := strings.TrimSpace(v[1 : len(v)-1])
+	if inner == "" {
+		return []string{}, nil
+	}
+	return shellSplit(inner)
+}
+
+func shellSplit(s string) ([]string, error) {
+	var out []string
+	var cur strings.Builder
+	inSingle := false
+	inDouble := false
+	escaped := false
+	flush := func() {
+		if cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range s {
+		if escaped {
+			cur.WriteRune(r)
+			escaped = false
+			continue
+		}
+		switch r {
+		case '\\':
+			escaped = true
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			} else {
+				cur.WriteRune(r)
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			} else {
+				cur.WriteRune(r)
+			}
+		case ' ', '\t':
+			if inSingle || inDouble {
+				cur.WriteRune(r)
+			} else {
+				flush()
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if escaped || inSingle || inDouble {
+		return nil, fmt.Errorf("unterminated quote or escape in array")
+	}
+	flush()
+	return out, nil
+}
+
+func trimShellQuotes(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 {
+		if (v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'') {
+			return v[1 : len(v)-1]
+		}
+	}
+	return v
 }
 
 func DefaultConfig() *Config {
@@ -172,21 +235,4 @@ func DefaultConfig() *Config {
 func parseBool(v string) bool {
 	v = strings.ToLower(v)
 	return v == "yes" || v == "true" || v == "on" || v == "1"
-}
-
-func mapToSlice(m map[int]string) []string {
-	if len(m) == 0 {
-		return nil
-	}
-	maxIdx := -1
-	for k := range m {
-		if k > maxIdx {
-			maxIdx = k
-		}
-	}
-	s := make([]string, maxIdx+1)
-	for k, v := range m {
-		s[k] = v
-	}
-	return s
 }
