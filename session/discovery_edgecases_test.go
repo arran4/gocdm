@@ -24,23 +24,15 @@ func writeEmbeddedDesktop(t *testing.T, baseDir, name string) string {
 	return path
 }
 
-func withTempPathExecutable(t *testing.T, bin string) {
-	t.Helper()
-	tmpDir, err := os.MkdirTemp("", "session-path-bin")
-	if err != nil {
-		t.Fatal(err)
+func newMockDiscoverer() *Discoverer {
+	d := NewDiscoverer()
+	d.ExecLookPath = func(file string) (string, error) {
+		return file, nil
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
-	binPath := filepath.Join(tmpDir, bin)
-	if err := os.WriteFile(binPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	oldPath := os.Getenv("PATH")
-	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+oldPath)
+	return d
 }
 
 func TestParseDesktopFileWhitespaceAroundEquals(t *testing.T) {
-	withTempPathExecutable(t, "edge-session")
 	tmpDir, err := os.MkdirTemp("", "desktop-whitespace")
 	if err != nil {
 		t.Fatal(err)
@@ -48,7 +40,8 @@ func TestParseDesktopFileWhitespaceAroundEquals(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	path := writeEmbeddedDesktop(t, tmpDir, "whitespace.desktop")
 
-	s, err := parseDesktopFile(path, "X")
+	d := newMockDiscoverer()
+	s, err := d.parseDesktopFile(path, "X")
 	if err != nil {
 		t.Fatalf("parseDesktopFile failed: %v", err)
 	}
@@ -61,7 +54,6 @@ func TestParseDesktopFileWhitespaceAroundEquals(t *testing.T) {
 }
 
 func TestParseDesktopFileLocalizedNameFallback(t *testing.T) {
-	withTempPathExecutable(t, "edge-session")
 	tmpDir, err := os.MkdirTemp("", "desktop-localized")
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +61,8 @@ func TestParseDesktopFileLocalizedNameFallback(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	path := writeEmbeddedDesktop(t, tmpDir, "localized_name_only.desktop")
 
-	s, err := parseDesktopFile(path, "W")
+	d := newMockDiscoverer()
+	s, err := d.parseDesktopFile(path, "W")
 	if err != nil {
 		t.Fatalf("parseDesktopFile failed: %v", err)
 	}
@@ -89,7 +82,8 @@ func TestParseDesktopFileQuotedExecPreserved(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	path := writeEmbeddedDesktop(t, tmpDir, "quoted_exec.desktop")
 
-	s, err := parseDesktopFile(path, "X")
+	d := newMockDiscoverer()
+	s, err := d.parseDesktopFile(path, "X")
 	if err != nil {
 		t.Fatalf("parseDesktopFile failed: %v", err)
 	}

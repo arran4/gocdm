@@ -26,6 +26,10 @@ var DropPrivilegesFn = DropPrivileges
 var ExecProgramFn = ExecProgram
 var LaunchXSessionFn = x11.LaunchXSession
 
+var SupportsLoginModeFn = supportsLoginMode
+var SupportsXSessionsFn = supportsXSessions
+var PlatformSupportTierFn = platformSupportTier
+
 var PasswdFilePath = "/etc/passwd"
 var PamEnvConfPath = "/etc/security/pam_env.conf"
 
@@ -154,8 +158,8 @@ func Run(args []string, exit func(int)) {
 	}
 
 	username := currentUsername()
-	if *loginMode && !supportsLoginMode() {
-		fmt.Fprintf(os.Stderr, "-login is not supported on %s (support tier: %s)\n", runtime.GOOS, platformSupportTier())
+	if *loginMode && !SupportsLoginModeFn() {
+		fmt.Fprintf(os.Stderr, "-login is not supported on %s (support tier: %s)\n", runtime.GOOS, PlatformSupportTierFn())
 		exit(1)
 		return
 	}
@@ -279,8 +283,8 @@ func Run(args []string, exit func(int)) {
 
 	case "X":
 		// X program
-		if !supportsXSessions() {
-			fmt.Fprintf(os.Stderr, "X session launch is not supported on %s (support tier: %s)\n", runtime.GOOS, platformSupportTier())
+		if !SupportsXSessionsFn() {
+			fmt.Fprintf(os.Stderr, "X session launch is not supported on %s (support tier: %s)\n", runtime.GOOS, PlatformSupportTierFn())
 			exit(1)
 			return
 		}

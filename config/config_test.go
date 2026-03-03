@@ -122,6 +122,7 @@ func TestLoadConfigDefaultDiscoveryOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
 	xdgPath := filepath.Join(xdg, "cdm", "cdmrc")

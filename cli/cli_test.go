@@ -166,6 +166,7 @@ func TestRunUnknownFlag(t *testing.T) {
 }
 func TestRunLoginModePromptFailure(t *testing.T) {
 	mockEnvFiles(t)
+	mockUnsupported(t)
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
 	defer func() {
@@ -203,6 +204,7 @@ func TestRunLoginModePromptFailure(t *testing.T) {
 }
 func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 	mockEnvFiles(t)
+	mockUnsupported(t)
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
 	defer func() {
@@ -240,6 +242,7 @@ func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 }
 func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	mockEnvFiles(t)
+	mockUnsupported(t)
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
 	origIsTerminal := IsTerminal
@@ -396,6 +399,7 @@ flaglist=("C")`
 }
 func TestRunXSessionDryRun(t *testing.T) {
 	mockEnvFiles(t)
+	mockUnsupported(t)
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -468,6 +472,7 @@ func TestRunInvalidConfig(t *testing.T) {
 }
 func TestRunXSessionLockTTYActive(t *testing.T) {
 	mockEnvFiles(t)
+	mockUnsupported(t)
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
