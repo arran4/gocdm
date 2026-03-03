@@ -10,6 +10,8 @@ import (
 	"strings"
 )
 
+var ExecLookPath = exec.LookPath
+
 var (
 	X11SessionsDir     = "/etc/X11/Sessions"
 	XSessionsDir       = "/usr/share/xsessions"
@@ -221,7 +223,7 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 
 	// Check TryExec if present
 	if tryExec != "" {
-		if _, err := exec.LookPath(tryExec); err != nil {
+		if _, err := ExecLookPath(tryExec); err != nil {
 			return Session{}, fmt.Errorf("TryExec binary not found: %s", tryExec)
 		}
 	}
@@ -235,7 +237,7 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 			bin := cmdParts[0]
 			// Only check if it's an absolute path or in PATH
 			// Some desktop files use full paths, some use binaries in PATH.
-			if _, err := exec.LookPath(bin); err != nil {
+			if _, err := ExecLookPath(bin); err != nil {
 				return Session{}, fmt.Errorf("executable not found: %s", bin)
 			}
 		}

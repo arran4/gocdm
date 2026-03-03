@@ -26,17 +26,11 @@ func writeEmbeddedDesktop(t *testing.T, baseDir, name string) string {
 
 func withTempPathExecutable(t *testing.T, bin string) {
 	t.Helper()
-	tmpDir, err := os.MkdirTemp("", "session-path-bin")
-	if err != nil {
-		t.Fatal(err)
+	origLookPath := ExecLookPath
+	ExecLookPath = func(file string) (string, error) {
+		return file, nil
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
-	binPath := filepath.Join(tmpDir, bin)
-	if err := os.WriteFile(binPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	oldPath := os.Getenv("PATH")
-	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+oldPath)
+	t.Cleanup(func() { ExecLookPath = origLookPath })
 }
 
 func TestParseDesktopFileWhitespaceAroundEquals(t *testing.T) {
@@ -82,6 +76,7 @@ func TestParseDesktopFileLocalizedNameFallback(t *testing.T) {
 }
 
 func TestParseDesktopFileQuotedExecPreserved(t *testing.T) {
+	withTempPathExecutable(t, "/bin/sh")
 	tmpDir, err := os.MkdirTemp("", "desktop-quoted")
 	if err != nil {
 		t.Fatal(err)
