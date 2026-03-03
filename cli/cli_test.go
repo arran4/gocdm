@@ -68,6 +68,19 @@ func TestValidateTTYDryRunSkipsTerminalRequirement(t *testing.T) {
 	}
 }
 func mockEnvFiles(t *testing.T) {
+	// Setup capabilities so the tests can run on any OS
+	origSupportsLoginMode := SupportsLoginModeFn
+	origSupportsXSessions := SupportsXSessionsFn
+	origPlatformSupportTier := PlatformSupportTierFn
+	SupportsLoginModeFn = func() bool { return true }
+	SupportsXSessionsFn = func() bool { return true }
+	PlatformSupportTierFn = func() string { return "primary" }
+	t.Cleanup(func() {
+		SupportsLoginModeFn = origSupportsLoginMode
+		SupportsXSessionsFn = origSupportsXSessions
+		PlatformSupportTierFn = origPlatformSupportTier
+	})
+
 	tmpDir, err := os.MkdirTemp("", "env-mocks")
 	if err != nil {
 		t.Fatal(err)

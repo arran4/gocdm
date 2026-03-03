@@ -124,6 +124,10 @@ func TestLoadConfigDefaultDiscoveryOrder(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
+	// On Windows, os.UserHomeDir() uses USERPROFILE instead of HOME.
+	// Set both to be safe and ensure the mock environment works properly.
+	t.Setenv("USERPROFILE", home)
+
 	xdgPath := filepath.Join(xdg, "cdm", "cdmrc")
 	homePath := filepath.Join(home, ".cdmrc")
 	if err := os.WriteFile(xdgPath, []byte("countfrom=2\n"), 0o644); err != nil {

@@ -31,12 +31,26 @@ func withTempPathExecutable(t *testing.T, bin string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
+
+	// Ensure the binary name ends with .exe on Windows for exec.LookPath to find it.
+	if os.PathSeparator == '\\' {
+		if !strings.HasSuffix(bin, ".exe") && !strings.HasSuffix(bin, ".bat") && !strings.HasSuffix(bin, ".cmd") {
+			bin += ".exe"
+		}
+	}
+
 	binPath := filepath.Join(tmpDir, bin)
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(binPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	oldPath := os.Getenv("PATH")
-	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+oldPath)
+	// If the bin has a directory component, we must add its parent to PATH
+	// or rely on our absolute path logic. For `edge-session` it works fine.
+	// For `/bin/sh` we add `tmpDir/bin` to PATH if we stripped it, but here we add tmpDir.
+	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+filepath.Dir(binPath)+string(os.PathListSeparator)+oldPath)
 }
 
 func TestParseDesktopFileWhitespaceAroundEquals(t *testing.T) {
@@ -82,6 +96,9 @@ func TestParseDesktopFileLocalizedNameFallback(t *testing.T) {
 }
 
 func TestParseDesktopFileQuotedExecPreserved(t *testing.T) {
+	// Need to mock /bin/sh which is in the testdata file
+	withTempPathExecutable(t, "/bin/sh")
+
 	tmpDir, err := os.MkdirTemp("", "desktop-quoted")
 	if err != nil {
 		t.Fatal(err)

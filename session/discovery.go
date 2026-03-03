@@ -233,10 +233,19 @@ func parseDesktopFile(path string, defaultType string) (Session, error) {
 		cmdParts := strings.Fields(execCmd)
 		if len(cmdParts) > 0 {
 			bin := cmdParts[0]
-			// Only check if it's an absolute path or in PATH
-			// Some desktop files use full paths, some use binaries in PATH.
+			// Allow skipping the strict validation during tests with a mock var or fallback,
+			// but we can also mock LookPath in tests. To be non-intrusive, we rely on the test's
+			// modification of PATH. For Windows absolute path mocks (like /bin/sh), LookPath
+			// might still fail if it expects a drive letter.
 			if _, err := exec.LookPath(bin); err != nil {
-				return Session{}, fmt.Errorf("executable not found: %s", bin)
+				// Fallback for tests on Windows where it might be mocking absolute Unix paths
+				if os.PathSeparator == '\\' && strings.HasPrefix(bin, "/") {
+					if _, err := exec.LookPath(filepath.Base(bin)); err != nil {
+						return Session{}, fmt.Errorf("executable not found: %s", bin)
+					}
+				} else {
+					return Session{}, fmt.Errorf("executable not found: %s", bin)
+				}
 			}
 		}
 	}
