@@ -169,14 +169,17 @@ func TestRunLoginModePromptFailure(t *testing.T) {
 	mockUnsupported(t)
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
+	origTuiPromptCredentials := TuiPromptCredentials
 	defer func() {
 		NewAuthenticator = origNewAuthenticator
 		PromptCredentials = origPromptCredentials
+		TuiPromptCredentials = origTuiPromptCredentials
 	}()
 	NewAuthenticator = func(service string) auth.Authenticator {
 		return mockAuthenticator{}
 	}
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "", "", fmt.Errorf("prompt failed") }
+	TuiPromptCredentials = func(title, theme string) (string, string, error) { return "", "", fmt.Errorf("prompt failed") }
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -207,14 +210,17 @@ func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 	mockUnsupported(t)
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
+	origTuiPromptCredentials := TuiPromptCredentials
 	defer func() {
 		NewAuthenticator = origNewAuthenticator
 		PromptCredentials = origPromptCredentials
+		TuiPromptCredentials = origTuiPromptCredentials
 	}()
 	NewAuthenticator = func(service string) auth.Authenticator {
 		return mockAuthenticator{err: fmt.Errorf("pam denied")}
 	}
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "badpass", nil }
+	TuiPromptCredentials = func(title, theme string) (string, string, error) { return "demo", "badpass", nil }
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -245,6 +251,7 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	mockUnsupported(t)
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
+	origTuiPromptCredentials := TuiPromptCredentials
 	origIsTerminal := IsTerminal
 	origExecLookPath := ExecLookPath
 	origDropPrivilegesFn := DropPrivilegesFn
@@ -252,6 +259,7 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	defer func() {
 		NewAuthenticator = origNewAuthenticator
 		PromptCredentials = origPromptCredentials
+		TuiPromptCredentials = origTuiPromptCredentials
 		IsTerminal = origIsTerminal
 		ExecLookPath = origExecLookPath
 		DropPrivilegesFn = origDropPrivilegesFn
@@ -259,6 +267,7 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	}()
 	NewAuthenticator = func(service string) auth.Authenticator { return mockAuthenticator{} }
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "secret", nil }
+	TuiPromptCredentials = func(title, theme string) (string, string, error) { return "demo", "secret", nil }
 	IsTerminal = func(fd int) bool { return true }
 	ExecLookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	var droppedUser string

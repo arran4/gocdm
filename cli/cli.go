@@ -21,6 +21,9 @@ var Version = "dev"
 var IsTerminal = term.IsTerminal
 var NewAuthenticator = func(service string) auth.Authenticator { return auth.NewPAMAuthenticator(service) }
 var PromptCredentials = auth.PromptCredentials
+var TuiPromptCredentials = func(title, theme string) (string, string, error) {
+	return dialog.ShowLogin(title, theme)
+}
 var ExecLookPath = exec.LookPath
 var DropPrivilegesFn = DropPrivileges
 var ExecProgramFn = ExecProgram
@@ -40,6 +43,7 @@ func Run(args []string, exit func(int)) {
 	forceMenu := fs.Bool("menu", false, "Force menu display even if only one session is found")
 	showVersion := fs.Bool("version", false, "Show version information")
 	loginMode := fs.Bool("login", false, "Prompt for username/password and authenticate with PAM")
+	tuiLogin := fs.Bool("tui-login", true, "Use TUI for login prompt (when -login is enabled)")
 	pamService := fs.String("pam-service", "login", "PAM service name used with -login")
 
 	if err := fs.Parse(args); err != nil {
@@ -119,6 +123,42 @@ func Run(args []string, exit func(int)) {
 		}
 	}
 
+	if err := validateTTY(*dryRun); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		exit(1)
+		return
+	}
+
+	username := currentUsername()
+	if *loginMode && !SupportsLoginModeFn() {
+		fmt.Fprintf(os.Stderr, "-login is not supported on %s (support tier: %s)\n", runtime.GOOS, PlatformSupportTierFn())
+		exit(1)
+		return
+	}
+	if *loginMode {
+		authenticator := NewAuthenticator(*pamService)
+		var promptedUser, password string
+		var err error
+
+		if *tuiLogin {
+			promptedUser, password, err = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC)
+		} else {
+			promptedUser, password, err = PromptCredentials(os.Stdin, os.Stdout)
+		}
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Authentication prompt failed: %v\n", err)
+			exit(1)
+			return
+		}
+		if err := authenticator.Authenticate(promptedUser, password); err != nil {
+			fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
+			exit(1)
+			return
+		}
+		username = promptedUser
+	}
+
 	var selectedIdx int
 	// Show menu if more than 1 session OR forceMenu is true
 	if len(sessions) == 1 && !*forceMenu {
@@ -151,33 +191,6 @@ func Run(args []string, exit func(int)) {
 	}
 
 	selectedSession := sessions[selectedIdx]
-	if err := validateTTY(*dryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		exit(1)
-		return
-	}
-
-	username := currentUsername()
-	if *loginMode && !SupportsLoginModeFn() {
-		fmt.Fprintf(os.Stderr, "-login is not supported on %s (support tier: %s)\n", runtime.GOOS, PlatformSupportTierFn())
-		exit(1)
-		return
-	}
-	if *loginMode {
-		authenticator := NewAuthenticator(*pamService)
-		promptedUser, password, err := PromptCredentials(os.Stdin, os.Stdout)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Authentication prompt failed: %v\n", err)
-			exit(1)
-			return
-		}
-		if err := authenticator.Authenticate(promptedUser, password); err != nil {
-			fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
-			exit(1)
-			return
-		}
-		username = promptedUser
-	}
 
 	sessionEnv, err := config.BuildSessionEnv(os.Environ(), username, PasswdFilePath, PamEnvConfPath)
 	if err != nil {
