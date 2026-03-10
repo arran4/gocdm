@@ -63,7 +63,7 @@ Use this override:
 ```ini
 [Service]
 ExecStart=
-ExecStart=-/usr/local/bin/gocdm -login -pam-service login
+ExecStart=-/usr/local/bin/gocdm -login
 StandardInput=tty
 StandardOutput=tty
 TTYPath=/dev/tty1
