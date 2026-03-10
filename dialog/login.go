@@ -58,7 +58,7 @@ func ShowLogin(title string, theme string) (string, string, error) {
 	headerText := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
 		SetDynamicColors(true).
-		SetText(fmt.Sprintf("%s", hostname))
+		SetText(hostname)
 
 	clockText := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
