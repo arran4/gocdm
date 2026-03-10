@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"os/signal"
+	"syscall"
 )
 
 type execProxy interface {
@@ -176,5 +178,19 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 		return fmt.Errorf("failed to start session: %w", err)
 	}
 
-	return nil
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+
+	go func() {
+		for sig := range sigs {
+			if cmd.Process != nil {
+				cmd.Process.Signal(sig)
+			}
+		}
+	}()
+
+	err = cmd.Wait()
+	signal.Stop(sigs)
+	close(sigs)
+	return err
 }
