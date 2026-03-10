@@ -2,6 +2,9 @@ package dialog
 
 import (
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -46,6 +49,31 @@ func ShowLogin(title string, theme string) (string, string, error) {
 	form.SetTitle(fmt.Sprintf(" %s ", title)).SetTitleAlign(tview.AlignCenter)
 	form.SetBorder(true)
 
+	// Add Hostname and Clock
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "localhost"
+	}
+
+	headerText := tview.NewTextView().
+		SetTextAlign(tview.AlignCenter).
+		SetDynamicColors(true).
+		SetText(fmt.Sprintf("%s", hostname))
+
+	clockText := tview.NewTextView().
+		SetTextAlign(tview.AlignCenter).
+		SetDynamicColors(true)
+
+	updateClock := func() {
+		for {
+			time.Sleep(1 * time.Second)
+			app.QueueUpdateDraw(func() {
+				clockText.SetText(time.Now().Format("15:04:05 - Jan 02, 2006"))
+			})
+		}
+	}
+	go updateClock()
+
 	if rc != nil {
 		if attr, ok := rc.Attributes["menubox_border_color"]; ok {
 			form.SetBorderColor(MapColor(attr.Foreground))
@@ -88,11 +116,21 @@ func ShowLogin(title string, theme string) (string, string, error) {
 		AddItem(nil, 0, 1, false).
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(nil, 0, 1, false).
+			AddItem(headerText, 1, 1, false).
+			AddItem(clockText, 1, 1, false).
+			AddItem(nil, 1, 1, false).
 			AddItem(form, height, 1, true).
 			AddItem(nil, 0, 1, false), width, 1, true).
 		AddItem(nil, 0, 1, false)
 
 	if rc != nil {
+		if attr, ok := rc.Attributes["title_color"]; ok {
+			headerText.SetTextColor(MapColor(attr.Foreground))
+			clockText.SetTextColor(MapColor(attr.Foreground))
+		} else {
+			headerText.SetTextColor(tcell.ColorWhite)
+			clockText.SetTextColor(tcell.ColorWhite)
+		}
 		if attr, ok := rc.Attributes["screen_color"]; ok {
 			flex.SetBackgroundColor(MapColor(attr.Background))
 			app.SetBeforeDrawFunc(func(s tcell.Screen) bool {

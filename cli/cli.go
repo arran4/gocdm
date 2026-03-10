@@ -61,6 +61,14 @@ func Run(args []string, exit func(int)) {
 		return
 	}
 
+	// Getty auto-detection for login mode consolidation
+	if !*loginMode {
+		ttyPath, err := os.Readlink("/proc/self/fd/0")
+		if err == nil && strings.HasPrefix(ttyPath, "/dev/tty") && os.Getenv("DISPLAY") == "" {
+			*loginMode = true
+		}
+	}
+
 	var configPath string
 	if *configPathFlag != "" && fs.NArg() > 0 {
 		fmt.Fprintln(os.Stderr, "cannot use both positional config path and -config; use one source")
