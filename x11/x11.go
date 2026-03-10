@@ -184,7 +184,7 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	go func() {
 		for sig := range sigs {
 			if cmd.Process != nil {
-				cmd.Process.Signal(sig)
+				_ = cmd.Process.Signal(sig)
 			}
 		}
 	}()
