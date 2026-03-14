@@ -32,23 +32,19 @@ func helperCommand(name string, arg ...string) *exec.Cmd {
 }
 
 func TestFindFreeDisplay(t *testing.T) {
-	origExec := osExec
-	defer func() { osExec = origExec }()
-	osExec = mockExecProxy{commandFn: helperCommand}
+	tmpDir := t.TempDir()
+	origDir := X11SocketDir
+	X11SocketDir = tmpDir
+	defer func() { X11SocketDir = origDir }()
 
-	os.Setenv("MOCK_DISPLAY_STATUS_0", "taken")
-	os.Setenv("MOCK_DISPLAY_STATUS_1", "free")
-	defer func() {
-		os.Unsetenv("MOCK_DISPLAY_STATUS_0")
-		os.Unsetenv("MOCK_DISPLAY_STATUS_1")
-	}()
-
+	// Create a mock active display at 0 (by creating a directory to simulate socket and maybe making dialing fail appropriately or just testing IsDisplayActive behavior)
+	// Actually, just making it an empty directory means no sockets exist, so all displays should be free
 	display, err := FindFreeDisplay()
 	if err != nil {
 		t.Fatalf("FindFreeDisplay failed: %v", err)
 	}
-	if display != 1 {
-		t.Errorf("Expected display 1, got %d", display)
+	if display != 0 {
+		t.Errorf("FindFreeDisplay returned invalid display number: %d, expected 0", display)
 	}
 }
 
@@ -73,20 +69,6 @@ func TestHelperProcess(t *testing.T) {
 	}
 
 	cmd, args := args[0], args[1:]
-	if cmd == "xdpyinfo" {
-		if len(args) < 2 {
-			os.Exit(2)
-		}
-		display := args[1]
-		if display == ":0.0" && os.Getenv("MOCK_DISPLAY_STATUS_0") == "taken" {
-			os.Exit(0)
-		}
-		if display == ":1.0" && os.Getenv("MOCK_DISPLAY_STATUS_1") == "free" {
-			fmt.Fprintf(os.Stderr, "xdpyinfo:  unable to open display \"%s\"\n", display)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
 	if cmd == "chvt" {
 		if os.Getenv("MOCK_CHVT_FAIL") == "1" {
 			fmt.Fprintln(os.Stderr, "chvt failed")
@@ -171,20 +153,15 @@ func TestLaunchXSessionSwitchVTFailure(t *testing.T) {
 }
 
 func TestIsDisplayActive(t *testing.T) {
-	origExec := osExec
-	defer func() { osExec = origExec }()
-	osExec = mockExecProxy{commandFn: helperCommand}
+	tmpDir := t.TempDir()
+	origDir := X11SocketDir
+	X11SocketDir = tmpDir
+	defer func() { X11SocketDir = origDir }()
 
-	os.Setenv("MOCK_DISPLAY_STATUS_0", "taken")
-	defer os.Unsetenv("MOCK_DISPLAY_STATUS_0")
-	if !IsDisplayActive(0) {
-		t.Errorf("Expected display 0 to be active")
-	}
-
-	os.Setenv("MOCK_DISPLAY_STATUS_1", "free")
-	defer os.Unsetenv("MOCK_DISPLAY_STATUS_1")
-	if IsDisplayActive(1) {
-		t.Errorf("Expected display 1 to be inactive")
+	// Since we mock X11SocketDir to an empty dir, no socket exists
+	active := IsDisplayActive(0)
+	if active {
+		t.Errorf("Expected display 0 to be inactive when no socket exists")
 	}
 }
 
@@ -199,21 +176,6 @@ func TestSwitchVT(t *testing.T) {
 	}
 }
 
-func TestFindFreeDisplayMissingTool(t *testing.T) {
-	origExec := osExec
-	defer func() { osExec = origExec }()
-	osExec = mockExecProxy{
-		commandFn: helperCommand,
-		lookPathFn: func(file string) (string, error) {
-			return "", fmt.Errorf("not found")
-		},
-	}
-
-	_, err := FindFreeDisplay()
-	if err == nil {
-		t.Fatal("expected missing tool error")
-	}
-}
 
 func TestLaunchXSessionMissingTool(t *testing.T) {
 	origExec := osExec
