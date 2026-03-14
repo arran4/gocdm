@@ -6,11 +6,11 @@ Cause: launched from non-interactive shell/session.
 
 Fix: run from a real VT/getty login or use `-dry-run` for non-interactive validation.
 
-## `Failed to find free display` / `required tool "xdpyinfo" not found in PATH`
+## `Failed to find free display`
 
-Cause: missing X tooling or no usable display probe path.
+Cause: All 7 X displays (0-6) are currently in use, or there is an error probing local X11 unix sockets.
 
-Fix: install X utilities and ensure `xdpyinfo` is in `PATH`.
+Fix: Ensure there is at least one free display or check `/tmp/.X11-unix` socket directory permissions.
 
 ## `Failed to launch X session: required tool "startx" not found in PATH`
 

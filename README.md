@@ -185,7 +185,7 @@ This keeps behavior intentional on non-Linux/BSD targets instead of failing late
 - Deprecated config knobs now fail explicitly instead of behaving as silent/no-ops:
   - `altstartx`
   - non-default `cktimeout` in ConsoleKit path
-- External X tooling is validated up-front with actionable errors (`xdpyinfo`, `chvt`, `startx`, `ck-launch-session`).
+- External X tooling is validated up-front with actionable errors (`chvt`, `startx`, `ck-launch-session`).
 - Platform support policy is explicit (Linux primary, BSD secondary, other OS unsupported).
 
 ### Remaining parity work

@@ -520,7 +520,13 @@ xtty=keep`
 	oldStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	// This tests the dry run logic with locktty parsed and mock xdpyinfo success
+	// Setup an empty temp dir as X11 socket directory so display :0 is considered inactive
+	origX11Dir := x11.X11SocketDir
+	x11.X11SocketDir = t.TempDir()
+	defer func() { x11.X11SocketDir = origX11Dir }()
+
+	// This tests the dry run logic with locktty parsed
+	// Since X11 socket dir is mocked to an empty directory, display :0 is inactive
 	Run([]string{"-config", configPath, "-dry-run"}, mockExit)
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -532,9 +538,11 @@ xtty=keep`
 	if exited {
 		t.Errorf("Expected dry run to return without exit, but exited with %d", code)
 	}
-	expectedOutput := "Dry run: would switch to existing X session on display :0 VT7\n"
-	if output != expectedOutput {
-		t.Errorf("Expected output %q, got %q", expectedOutput, output)
+
+	expectedInactive := "Dry run: would launch X session: [startx] on display :0 VT7\n"
+
+	if !strings.HasPrefix(output, expectedInactive) {
+		t.Errorf("Expected output to start with %q, got %q", expectedInactive, output)
 	}
 }
 func TestHelperProcess(t *testing.T) {
@@ -555,12 +563,6 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	cmd := args[0]
-	if cmd == "xdpyinfo" {
-		if os.Getenv("MOCK_XDPYINFO_FAIL") == "1" {
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
 	if cmd == "tty" {
 		if os.Getenv("MOCK_TTY_KEEP") == "1" {
 			fmt.Println("/dev/tty7")

@@ -2,6 +2,7 @@ package x11
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -30,6 +31,9 @@ func (realExecProxy) LookPath(file string) (string, error) {
 }
 
 var osExec execProxy = realExecProxy{}
+
+// X11SocketDir is the directory where X11 unix sockets are stored. Exposed for mocking in tests.
+var X11SocketDir = "/tmp/.X11-unix"
 
 func ensureTool(tool string) error {
 	if _, err := osExec.LookPath(tool); err != nil {
@@ -65,21 +69,37 @@ func isSecureTTYPath(path string) bool {
 
 // IsDisplayActive checks if the given display number is active.
 func IsDisplayActive(display int) bool {
-	cmd := osExec.Command("xdpyinfo", "-display", fmt.Sprintf(":%d.0", display))
-	output, _ := cmd.CombinedOutput()
+	socketPath := fmt.Sprintf("%s/X%d", X11SocketDir, display)
 
-	// If the command succeeds, the display is active.
-	if cmd.ProcessState != nil && cmd.ProcessState.Success() {
+	// Try abstract socket first (Linux)
+	abstractPath := fmt.Sprintf("@%s", socketPath)
+	if conn, err := net.Dial("unix", abstractPath); err == nil {
+		conn.Close()
 		return true
 	}
 
-	outStr := string(output)
-	if strings.Contains(outStr, "No protocol specified") || strings.Contains(outStr, "Invalid MIT") {
-		// Display is active but inaccessible
-		return true
+	// Try traditional socket file
+	if _, err := os.Stat(socketPath); os.IsNotExist(err) {
+		return false // No socket file, display is inactive
 	}
 
-	return false
+	conn, err := net.Dial("unix", socketPath)
+	if err == nil {
+		conn.Close()
+		return true // Connection successful, display is active
+	}
+
+	// Connection failed, check if it's because connection is refused (dead socket)
+	if opErr, ok := err.(*net.OpError); ok {
+		if sysErr, ok := opErr.Err.(*os.SyscallError); ok {
+			if sysErr.Err == syscall.ECONNREFUSED {
+				return false // Stale socket file, display is inactive
+			}
+		}
+	}
+
+	// For any other error (e.g. permission denied), assume active
+	return true
 }
 
 // SwitchVT switches the virtual terminal to the given VT number.
@@ -93,27 +113,10 @@ func SwitchVT(vt string) error {
 
 // FindFreeDisplay finds the first available X display number starting from 0.
 func FindFreeDisplay() (int, error) {
-	if err := ensureTool("xdpyinfo"); err != nil {
-		return -1, fmt.Errorf("cannot probe X displays: %w", err)
-	}
-
 	for i := 0; i < 7; i++ {
-		cmd := osExec.Command("xdpyinfo", "-display", fmt.Sprintf(":%d.0", i))
-		output, _ := cmd.CombinedOutput()
-
-		// If command succeeded, display is active
-		if cmd.ProcessState != nil && cmd.ProcessState.Success() {
-			continue
+		if !IsDisplayActive(i) {
+			return i, nil
 		}
-
-		outStr := string(output)
-		if strings.Contains(outStr, "No protocol specified") || strings.Contains(outStr, "Invalid MIT") {
-			// Display is in use but inaccessible
-			continue
-		}
-
-		// Display is free
-		return i, nil
 	}
 	return -1, fmt.Errorf("no free display found")
 }

@@ -6,7 +6,7 @@ Unlike the X path, it does **not** run through `startx`, VT switching, or displa
 ## Key differences from X launch assumptions
 
 - No `startx` wrapper is used.
-- No `xdpyinfo` display probing is performed.
+- No X11 socket probing is performed to find free displays.
 - No `chvt` handoff is performed by GoCDM.
 - `XDG_SESSION_TYPE=wayland` is appended to the launched environment.
 
