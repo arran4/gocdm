@@ -112,17 +112,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Template-time toggles (set these once for the repo; avoid broad auto-detection)
-      # EXPECT_GO=true
-      # EXPECT_NODE=false
-      # EXPECT_DART=false
-      # EXPECT_FLUTTER=false
-      # EXPECT_QT_CPP=false
-      # EXPECT_MAKE_C=false
-      # EXPECT_DOCKER=false
-      # EXPECT_GORELEASER=true
-
       - id: detect
+        env:
+          # Template-time toggles (set these once for the repo; avoid broad auto-detection)
+          EXPECT_GO: 'true'
+          EXPECT_NODE: 'false'
+          EXPECT_DART: 'false'
+          EXPECT_FLUTTER: 'false'
+          EXPECT_QT_CPP: 'false'
+          EXPECT_MAKE_C: 'false'
+          EXPECT_DOCKER: 'false'
+          EXPECT_GORELEASER: 'true'
         shell: bash
         run: |
           set -euo pipefail
