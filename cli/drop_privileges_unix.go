@@ -31,6 +31,22 @@ func DropPrivileges(username string) error {
 		return fmt.Errorf("invalid gid %q: %w", u.Gid, err)
 	}
 
+	gidsStr, err := u.GroupIds()
+	if err != nil {
+		return fmt.Errorf("get group ids for %q: %w", username, err)
+	}
+	var gids []int
+	for _, g := range gidsStr {
+		ig, err := strconv.Atoi(g)
+		if err != nil {
+			return fmt.Errorf("invalid supplementary gid %q: %w", g, err)
+		}
+		gids = append(gids, ig)
+	}
+
+	if err := syscall.Setgroups(gids); err != nil {
+		return fmt.Errorf("setgroups %v: %w", gids, err)
+	}
 	if err := syscall.Setgid(gid); err != nil {
 		return fmt.Errorf("setgid %d: %w", gid, err)
 	}
