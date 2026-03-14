@@ -48,25 +48,32 @@ func loadPasswdEntry(path, username string) (*passwdEntry, error) {
 	}
 	defer f.Close()
 
+	prefix := username + ":"
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		parts := strings.Split(line, ":")
-		if len(parts) < 7 {
+		if !strings.HasPrefix(line, prefix) {
 			continue
 		}
-		if parts[0] != username {
-			continue
+		if entry := parsePasswdLine(line); entry != nil {
+			return entry, nil
 		}
-		return &passwdEntry{Username: parts[0], HomeDir: parts[5], Shell: parts[6]}, nil
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan passwd file: %w", err)
 	}
 	return nil, fmt.Errorf("user %q not found in passwd file", username)
+}
+
+func parsePasswdLine(line string) *passwdEntry {
+	parts := strings.Split(line, ":")
+	if len(parts) < 7 {
+		return nil
+	}
+	return &passwdEntry{Username: parts[0], HomeDir: parts[5], Shell: parts[6]}
 }
 
 func applyPamEnvFile(envMap map[string]string, path string) error {
