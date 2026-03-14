@@ -68,7 +68,7 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 
-	cmd, args := args[0], args[1:]
+	cmd := args[0]
 	if cmd == "chvt" {
 		if os.Getenv("MOCK_CHVT_FAIL") == "1" {
 			fmt.Fprintln(os.Stderr, "chvt failed")
