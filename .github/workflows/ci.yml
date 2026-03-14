@@ -174,16 +174,27 @@ jobs:
           if [[ -n "$OVERRIDE" ]]; then
             next_tag="v$OVERRIDE"
           else
+            current_tag=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --tags --max-count=1 | xargs -r git describe --tags 2>/dev/null || echo "v0.0.0")
+            current_version="${current_tag#v}"
+            if ! npx semver "$current_version" >/dev/null 2>&1; then
+              current_version="0.0.0"
+            fi
+
             case "$MODE" in
-              release-major) level="--major"; suffix="" ;;
-              release-minor) level="--minor"; suffix="" ;;
-              release-patch) level="--patch"; suffix="" ;;
-              release-test)  level="--patch"; suffix="--prerelease test" ;;
-              release-rc)    level="--patch"; suffix="--prerelease rc" ;;
-              release-alpha) level="--patch"; suffix="--prerelease alpha" ;;
+              release-major) inc="major"; preid="" ;;
+              release-minor) inc="minor"; preid="" ;;
+              release-patch) inc="patch"; preid="" ;;
+              release-test)  inc="prerelease"; preid="test" ;;
+              release-rc)    inc="prerelease"; preid="rc" ;;
+              release-alpha) inc="prerelease"; preid="alpha" ;;
               *) echo "Unsupported release mode: $MODE"; exit 1 ;;
             esac
-            next_tag=$(git-tag-inc $level $suffix)
+
+            if [[ -n "$preid" ]]; then
+              next_tag="v$(npx semver "$current_version" -i "$inc" --preid "$preid")"
+            else
+              next_tag="v$(npx semver "$current_version" -i "$inc")"
+            fi
           fi
 
           echo "release_tag=$next_tag" >> "$GITHUB_OUTPUT"
