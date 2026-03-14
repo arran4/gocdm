@@ -65,28 +65,7 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 
 	list.SetBorder(true)
 
-	if rc != nil {
-		if attr, ok := rc.Attributes["item_selected_color"]; ok {
-			list.SetSelectedBackgroundColor(MapColor(attr.Background))
-			list.SetSelectedTextColor(MapColor(attr.Foreground))
-		}
-		if attr, ok := rc.Attributes["item_color"]; ok {
-			list.SetMainTextColor(MapColor(attr.Foreground))
-		}
-		if attr, ok := rc.Attributes["title_color"]; ok {
-			list.SetTitleColor(MapColor(attr.Foreground))
-		}
-		if attr, ok := rc.Attributes["menubox_border_color"]; ok {
-			list.SetBorderColor(MapColor(attr.Foreground))
-		} else if attr, ok := rc.Attributes["border_color"]; ok {
-			list.SetBorderColor(MapColor(attr.Foreground))
-		}
-		if attr, ok := rc.Attributes["menubox_color"]; ok {
-			list.SetBackgroundColor(MapColor(attr.Background))
-		} else if attr, ok := rc.Attributes["dialog_color"]; ok {
-			list.SetBackgroundColor(MapColor(attr.Background))
-		}
-	}
+	applyListTheme(list, rc)
 
 	for i, opt := range options {
 		// Prepend index to match dialog look
@@ -114,15 +93,7 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 			AddItem(nil, 0, 1, false), width, 1, true).
 		AddItem(nil, 0, 1, false)
 
-	if rc != nil {
-		if attr, ok := rc.Attributes["screen_color"]; ok {
-			flex.SetBackgroundColor(MapColor(attr.Background))
-			app.SetBeforeDrawFunc(func(s tcell.Screen) bool {
-				s.Fill(' ', tcell.StyleDefault.Background(MapColor(attr.Background)))
-				return false
-			})
-		}
-	}
+	applyScreenTheme(app, flex, rc)
 
 	var selectedIdx = -1
 	var selectionError error
@@ -168,4 +139,43 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 	}
 
 	return selectedIdx, nil
+}
+
+func applyListTheme(list *tview.List, rc *DialogRC) {
+	if rc == nil {
+		return
+	}
+	if attr, ok := rc.Attributes["item_selected_color"]; ok {
+		list.SetSelectedBackgroundColor(MapColor(attr.Background))
+		list.SetSelectedTextColor(MapColor(attr.Foreground))
+	}
+	if attr, ok := rc.Attributes["item_color"]; ok {
+		list.SetMainTextColor(MapColor(attr.Foreground))
+	}
+	if attr, ok := rc.Attributes["title_color"]; ok {
+		list.SetTitleColor(MapColor(attr.Foreground))
+	}
+	if attr, ok := rc.Attributes["menubox_border_color"]; ok {
+		list.SetBorderColor(MapColor(attr.Foreground))
+	} else if attr, ok := rc.Attributes["border_color"]; ok {
+		list.SetBorderColor(MapColor(attr.Foreground))
+	}
+	if attr, ok := rc.Attributes["menubox_color"]; ok {
+		list.SetBackgroundColor(MapColor(attr.Background))
+	} else if attr, ok := rc.Attributes["dialog_color"]; ok {
+		list.SetBackgroundColor(MapColor(attr.Background))
+	}
+}
+
+func applyScreenTheme(app *tview.Application, flex *tview.Flex, rc *DialogRC) {
+	if rc == nil {
+		return
+	}
+	if attr, ok := rc.Attributes["screen_color"]; ok {
+		flex.SetBackgroundColor(MapColor(attr.Background))
+		app.SetBeforeDrawFunc(func(s tcell.Screen) bool {
+			s.Fill(' ', tcell.StyleDefault.Background(MapColor(attr.Background)))
+			return false
+		})
+	}
 }
