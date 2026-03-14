@@ -255,3 +255,50 @@ func TestLaunchXSessionCKTimeoutDeprecated(t *testing.T) {
 		t.Fatal("expected ckTimeout deprecation error")
 	}
 }
+
+func TestLaunchXSessionEmptyBin(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
+
+	err := LaunchXSession([]string{}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	if err == nil {
+		t.Fatal("expected error when session command is empty")
+	}
+	if err.Error() != "session command cannot be empty" {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestLaunchXSessionIllegalArguments(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
+
+	err := LaunchXSession([]string{"my-wm", "--", "malicious-arg"}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	if err == nil {
+		t.Fatal("expected error when session command contains '--'")
+	}
+	if err.Error() != "session command cannot contain '--'" {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestLaunchXSessionUnresolvedBinary(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{
+		commandFn: helperCommand,
+		lookPathFn: func(file string) (string, error) {
+			if file == "nonexistent-wm" {
+				return "", fmt.Errorf("executable file not found in $PATH")
+			}
+			return "/mock/" + file, nil
+		},
+	}
+
+	err := LaunchXSession([]string{"nonexistent-wm"}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	if err == nil {
+		t.Fatal("expected error when session binary cannot be resolved")
+	}
+}
