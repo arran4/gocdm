@@ -217,7 +217,6 @@ func TestLaunchXSessionCKTimeoutDeprecated(t *testing.T) {
 	}
 }
 
-
 func TestLaunchXSessionInvalidLogPath(t *testing.T) {
 	origExec := osExec
 	defer func() { osExec = origExec }()
@@ -254,7 +253,7 @@ func TestLaunchXSessionInvalidLogPath(t *testing.T) {
 		if err != nil && strings.Contains(err.Error(), "path traversal is not allowed") {
 			t.Fatalf("expected LaunchXSession to NOT fail with path traversal error for valid path %q, got: %v", p, err)
 		}
-  }
+	}
 }
 
 func TestLaunchXSessionEmptyBin(t *testing.T) {
