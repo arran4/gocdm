@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -253,5 +254,27 @@ func TestLaunchXSessionCKTimeoutDeprecated(t *testing.T) {
 	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", true, 60, false, "/tmp/test.log", nil, nil)
 	if err == nil {
 		t.Fatal("expected ckTimeout deprecation error")
+	}
+}
+
+func TestLaunchXSessionInvalidLogPath(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
+
+	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, "../../tmp/test.log", []string{"-nolisten", "tcp"}, nil)
+	if err == nil {
+		t.Fatal("expected LaunchXSession to fail due to path traversal in startXLog")
+	}
+	if !strings.Contains(err.Error(), "path traversal is not allowed") {
+		t.Fatalf("expected path traversal error, got: %v", err)
+	}
+
+	err = LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, "/var/log/../../../etc/shadow", []string{"-nolisten", "tcp"}, nil)
+	if err == nil {
+		t.Fatal("expected LaunchXSession to fail due to path traversal in startXLog")
+	}
+	if !strings.Contains(err.Error(), "path traversal is not allowed") {
+		t.Fatalf("expected path traversal error, got: %v", err)
 	}
 }
