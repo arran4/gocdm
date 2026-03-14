@@ -28,6 +28,8 @@ var ExecLookPath = exec.LookPath
 var DropPrivilegesFn = DropPrivileges
 var ExecProgramFn = ExecProgram
 var LaunchXSessionFn = x11.LaunchXSession
+var osStat = os.Stat
+var osReadlink = os.Readlink
 
 var SupportsLoginModeFn = supportsLoginMode
 var SupportsXSessionsFn = supportsXSessions
@@ -63,8 +65,8 @@ func Run(args []string, exit func(int)) {
 
 	// Getty auto-detection for login mode consolidation
 	if !*loginMode {
-		ttyPath, err := os.Readlink("/proc/self/fd/0")
-		if err == nil && strings.HasPrefix(ttyPath, "/dev/tty") && os.Getenv("DISPLAY") == "" {
+		ttyPath, err := osReadlink("/proc/self/fd/0")
+		if err == nil && isSecureTTYPath(ttyPath) && os.Getenv("DISPLAY") == "" {
 			*loginMode = true
 		}
 	}
@@ -392,6 +394,31 @@ func Run(args []string, exit func(int)) {
 		exit(1)
 		return
 	}
+}
+
+// isSecureTTYPath validates that the provided string is a valid virtual terminal path.
+// It must reside securely in /dev/ (no subdirectories), start with "/dev/tty",
+// be followed by a valid number, and actually be a character device on the filesystem.
+func isSecureTTYPath(path string) bool {
+	if !strings.HasPrefix(path, "/dev/tty") || strings.Contains(path[8:], "/") {
+		return false
+	}
+
+	suffix := path[8:]
+	if len(suffix) == 0 {
+		return false
+	}
+	for _, char := range suffix {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+
+	info, err := osStat(path)
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
 func currentUsername() string {
