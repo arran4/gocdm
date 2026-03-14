@@ -167,9 +167,10 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 		cmd.Env = append([]string{}, env...)
 	}
 
-	cleanPath := filepath.Clean(startXLog)
-	if strings.Contains(cleanPath, "..") || strings.Contains(startXLog, "..") {
-		return fmt.Errorf("invalid startXLog path: path traversal is not allowed")
+	for _, part := range strings.Split(filepath.ToSlash(startXLog), "/") {
+		if part == ".." {
+			return fmt.Errorf("invalid startXLog path: path traversal is not allowed")
+		}
 	}
 
 	outfile, err := os.OpenFile(startXLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
