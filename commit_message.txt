@@ -1,0 +1,13 @@
+⚡ [performance analysis] TTY Validation Optimization
+
+💡 **What:**
+Investigated potential performance improvements to the `validateTTY` function in `cli/cli.go`, which performs three separate checks using `term.IsTerminal` for `os.Stdin`, `os.Stdout`, and `os.Stderr`.
+
+🎯 **Why:**
+`IsTerminal` wraps an `ioctl` syscall on Unix-like systems. Calling it three times results in three separate syscalls. The goal was to reduce this overhead to improve startup performance.
+
+📊 **Measured Improvement:**
+A benchmark was established indicating that executing all three `IsTerminal` checks takes approximately ~3300 ns/op (simulated real TTY), while a single check takes ~1100 ns/op.
+However, I was unable to show a meaningful performance improvement because optimizing this behavior requires altering the application's core functionality.
+
+Since standard file descriptors (0, 1, 2) can independently be redirected to files or pipes (e.g., `cmd > out.log 2> err.log`), the only way to strictly guarantee that all three outputs are attached to an interactive TTY is to check them individually. Short-circuiting or only checking `Stdin` violates this safety requirement. I ultimately reverted the attempted optimization to ensure functionality is preserved exactly, as preserving correctness must take priority over a negligible ~2 microsecond startup improvement.
