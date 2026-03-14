@@ -2,11 +2,14 @@
 
 package cli
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 func DropPrivileges(username string) error {
 	if username == "" {
-		return fmt.Errorf("username is required for privilege drop")
+		return errors.New("username is required for privilege drop")
 	}
-	return fmt.Errorf("-login is not supported on windows")
+	return fmt.Errorf("privilege drop is not supported on windows: %w", errors.ErrUnsupported)
 }
