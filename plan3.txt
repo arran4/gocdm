@@ -1,5 +1,0 @@
-So we can define them as package globals in `cli.go`? Wait, they are errors returned by `DropPrivileges`. `ErrUsernameRequired` can be defined in a new file, or `cli.go` or `drop_privileges_windows.go` and `drop_privileges_unix.go`.
-But wait! If I define `ErrUsernameRequired` in `drop_privileges_windows.go`, it will only be available on Windows!
-I should define it in a file that is built for all platforms, like `cli.go`.
-
-Let's check `cli/cli.go` for any existing errors.
