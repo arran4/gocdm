@@ -8,19 +8,18 @@ import (
 	"github.com/msteinert/pam/v2"
 )
 
-// PAMAuthenticator authenticates users against PAM.
-type PAMAuthenticator struct {
+type pamAuthenticator struct {
 	Service string
 }
 
-func NewPAMAuthenticator(service string) *PAMAuthenticator {
+func NewPAMAuthenticator(service string) Authenticator {
 	if service == "" {
 		service = "login"
 	}
-	return &PAMAuthenticator{Service: service}
+	return &pamAuthenticator{Service: service}
 }
 
-func (a *PAMAuthenticator) Authenticate(username, password string) error {
+func (a *pamAuthenticator) Authenticate(username, password string) error {
 	tx, err := pam.StartFunc(a.Service, username, func(style pam.Style, msg string) (string, error) {
 		switch style {
 		case pam.PromptEchoOff:
