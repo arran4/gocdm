@@ -27,22 +27,25 @@ type Config struct {
 
 func DiscoverConfigPath() string {
 	home, _ := os.UserHomeDir()
+	p := filepath.Join(home, ".cdmrc")
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+
 	xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfig == "" {
 		xdgConfig = filepath.Join(home, ".config")
 	}
-
-	paths := []string{
-		filepath.Join(home, ".cdmrc"),
-		filepath.Join(xdgConfig, "cdm", "cdmrc"),
-		"/etc/cdmrc",
+	p = filepath.Join(xdgConfig, "cdm", "cdmrc")
+	if _, err := os.Stat(p); err == nil {
+		return p
 	}
 
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
+	p = "/etc/cdmrc"
+	if _, err := os.Stat(p); err == nil {
+		return p
 	}
+
 	return ""
 }
 
