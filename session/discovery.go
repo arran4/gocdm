@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 var (
@@ -28,8 +29,29 @@ type Discoverer struct {
 }
 
 func NewDiscoverer() *Discoverer {
+	var mu sync.Mutex
+	type result struct {
+		path string
+		err  error
+	}
+	cache := make(map[string]result)
+
 	return &Discoverer{
-		ExecLookPath: exec.LookPath,
+		ExecLookPath: func(file string) (string, error) {
+			mu.Lock()
+			res, ok := cache[file]
+			mu.Unlock()
+
+			if ok {
+				return res.path, res.err
+			}
+
+			path, err := exec.LookPath(file)
+			mu.Lock()
+			cache[file] = result{path, err}
+			mu.Unlock()
+			return path, err
+		},
 	}
 }
 
