@@ -33,7 +33,7 @@ func TestLaunchXSessionConsoleKit(t *testing.T) {
 	}
 
 	joined := strings.Join(capturedArgs, " ")
-	if !strings.Contains(joined, "ck-launch-session my-wm") {
-		t.Errorf("Expected startx arguments to contain 'ck-launch-session my-wm', got: %v", capturedArgs)
+	if !strings.Contains(joined, "ck-launch-session") || !strings.Contains(joined, "my-wm") {
+		t.Errorf("Expected startx arguments to contain 'ck-launch-session' and 'my-wm', got: %v", capturedArgs)
 	}
 }

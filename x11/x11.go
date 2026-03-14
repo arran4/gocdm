@@ -152,11 +152,33 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	xArgs = append(xArgs, serverArgs...)
 	xArgs = append(xArgs, "vt"+vt)
 
+	// Validate bin to prevent argument injection into startx
+	for _, arg := range bin {
+		if arg == "--" {
+			return fmt.Errorf("session command cannot contain '--' as it interferes with startx argument parsing")
+		}
+	}
+
 	cmdArgs := []string{}
 	if consoleKit {
-		cmdArgs = append(cmdArgs, "ck-launch-session")
+		ckPath, err := osExec.LookPath("ck-launch-session")
+		if err != nil {
+			ckPath = "ck-launch-session"
+		}
+		cmdArgs = append(cmdArgs, ckPath)
 	}
-	cmdArgs = append(cmdArgs, bin...)
+
+	if len(bin) > 0 {
+		binPath, err := osExec.LookPath(bin[0])
+		if err != nil {
+			binPath = bin[0]
+		}
+		cmdArgs = append(cmdArgs, binPath)
+		if len(bin) > 1 {
+			cmdArgs = append(cmdArgs, bin[1:]...)
+		}
+	}
+
 	cmdArgs = append(cmdArgs, "--")
 	cmdArgs = append(cmdArgs, xArgs...)
 
