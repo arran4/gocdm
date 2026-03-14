@@ -67,3 +67,52 @@ func TestBuildSessionEnvMissingUser(t *testing.T) {
 		t.Fatal("expected error for missing user")
 	}
 }
+
+func TestParsePasswdLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want *passwdEntry
+	}{
+		{
+			name: "Valid entry",
+			line: "root:x:0:0:root:/root:/bin/bash",
+			want: &passwdEntry{Username: "root", HomeDir: "/root", Shell: "/bin/bash"},
+		},
+		{
+			name: "Valid entry trailing space",
+			line: "demo:x:1000:1000:Demo:/home/demo:/bin/bash   ",
+			want: &passwdEntry{Username: "demo", HomeDir: "/home/demo", Shell: "/bin/bash"},
+		},
+		{
+			name: "Empty line",
+			line: "",
+			want: nil,
+		},
+		{
+			name: "Comment line",
+			line: "#root:x:0:0:root:/root:/bin/bash",
+			want: nil,
+		},
+		{
+			name: "Malformed entry less than 7 parts",
+			line: "root:x:0:0:root:/root",
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parsePasswdLine(tt.line)
+			if tt.want == nil && got != nil {
+				t.Errorf("parsePasswdLine() expected nil, got %+v", got)
+			} else if tt.want != nil && got == nil {
+				t.Errorf("parsePasswdLine() expected %+v, got nil", tt.want)
+			} else if tt.want != nil && got != nil {
+				if got.Username != tt.want.Username || got.HomeDir != tt.want.HomeDir || got.Shell != tt.want.Shell {
+					t.Errorf("parsePasswdLine() got = %+v, want %+v", got, tt.want)
+				}
+			}
+		})
+	}
+}
