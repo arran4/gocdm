@@ -19,6 +19,7 @@ type execProxy interface {
 type realExecProxy struct{}
 
 var ExecCommand = exec.Command
+var osStat = os.Stat
 
 func (realExecProxy) Command(name string, arg ...string) *exec.Cmd {
 	return ExecCommand(name, arg...)
@@ -35,6 +36,31 @@ func ensureTool(tool string) error {
 		return fmt.Errorf("required tool %q not found in PATH", tool)
 	}
 	return nil
+}
+
+// isSecureTTYPath validates that the provided string is a valid virtual terminal path.
+// It must reside securely in /dev/ (no subdirectories), start with "/dev/tty",
+// be followed by a valid number, and actually be a character device on the filesystem.
+func isSecureTTYPath(path string) bool {
+	if !strings.HasPrefix(path, "/dev/tty") || strings.Contains(path[8:], "/") {
+		return false
+	}
+
+	suffix := path[8:]
+	if len(suffix) == 0 {
+		return false
+	}
+	for _, char := range suffix {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+
+	info, err := osStat(path)
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
 // IsDisplayActive checks if the given display number is active.
@@ -104,7 +130,7 @@ func GetVT(xtty string, display int) (string, error) {
 			return "", err
 		}
 		s := strings.TrimSpace(string(out))
-		if strings.HasPrefix(s, "/dev/tty") {
+		if isSecureTTYPath(s) {
 			return strings.TrimPrefix(s, "/dev/tty"), nil
 		}
 		return "", fmt.Errorf("invalid tty: %s", s)
