@@ -41,6 +41,18 @@ type passwdEntry struct {
 	Shell    string
 }
 
+func parsePasswdLine(line string) *passwdEntry {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return nil
+	}
+	parts := strings.Split(line, ":")
+	if len(parts) < 7 {
+		return nil
+	}
+	return &passwdEntry{Username: parts[0], HomeDir: parts[5], Shell: parts[6]}
+}
+
 func loadPasswdEntry(path, username string) (*passwdEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -48,20 +60,16 @@ func loadPasswdEntry(path, username string) (*passwdEntry, error) {
 	}
 	defer f.Close()
 
+	prefix := username + ":"
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		if !strings.HasPrefix(line, prefix) {
 			continue
 		}
-		parts := strings.Split(line, ":")
-		if len(parts) < 7 {
-			continue
+		if entry := parsePasswdLine(line); entry != nil {
+			return entry, nil
 		}
-		if parts[0] != username {
-			continue
-		}
-		return &passwdEntry{Username: parts[0], HomeDir: parts[5], Shell: parts[6]}, nil
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan passwd file: %w", err)
