@@ -44,7 +44,7 @@ func BenchmarkDiscoverConfigPathOriginalWithFile(b *testing.B) {
 	b.Setenv("HOME", home)
 	b.Setenv("USERPROFILE", home)
 	f := filepath.Join(home, ".cdmrc")
-	os.WriteFile(f, []byte(""), 0644)
+	_ = os.WriteFile(f, []byte(""), 0644)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		DiscoverConfigPathOriginal()
@@ -56,7 +56,7 @@ func BenchmarkDiscoverConfigPathOptimizedWithFile(b *testing.B) {
 	b.Setenv("HOME", home)
 	b.Setenv("USERPROFILE", home)
 	f := filepath.Join(home, ".cdmrc")
-	os.WriteFile(f, []byte(""), 0644)
+	_ = os.WriteFile(f, []byte(""), 0644)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		DiscoverConfigPath()
