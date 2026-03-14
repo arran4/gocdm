@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -256,11 +257,50 @@ func TestLaunchXSessionCKTimeoutDeprecated(t *testing.T) {
 	}
 }
 
+
+func TestLaunchXSessionInvalidLogPath(t *testing.T) {
+	origExec := osExec
+	defer func() { osExec = origExec }()
+	osExec = mockExecProxy{commandFn: helperCommand}
+	invalidPaths := []string{
+		"../../tmp/test.log",
+		"/var/log/../../../etc/shadow",
+		"../",
+		"../relative/path/../file.log",
+	}
+
+	for _, p := range invalidPaths {
+		err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, p, []string{"-nolisten", "tcp"}, nil)
+		if err == nil {
+			t.Fatalf("expected LaunchXSession to fail due to path traversal in startXLog for path %q", p)
+		}
+		if !strings.Contains(err.Error(), "path traversal is not allowed") {
+			t.Fatalf("expected path traversal error for %q, got: %v", p, err)
+		}
+	}
+
+	// Verify valid paths pass validation. To do this, we need to mock out other LaunchXSession checks
+	// like vt handoff, but for just validating the log path, we can rely on standard setup.
+	validPaths := []string{
+		"/dev/null",
+		"/tmp/test.log",
+		"my..file.log",
+		"valid.log",
+	}
+
+	for _, p := range validPaths {
+		// Mock os.OpenFile failure or success doesn't matter, we just care that it DOES NOT return the "path traversal" error
+		err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, p, []string{"-nolisten", "tcp"}, nil)
+		if err != nil && strings.Contains(err.Error(), "path traversal is not allowed") {
+			t.Fatalf("expected LaunchXSession to NOT fail with path traversal error for valid path %q, got: %v", p, err)
+		}
+  }
+}
+
 func TestLaunchXSessionEmptyBin(t *testing.T) {
 	origExec := osExec
 	defer func() { osExec = origExec }()
 	osExec = mockExecProxy{commandFn: helperCommand}
-
 	err := LaunchXSession([]string{}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
 	if err == nil {
 		t.Fatal("expected error when session command is empty")
