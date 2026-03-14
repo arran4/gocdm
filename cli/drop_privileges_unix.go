@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -10,12 +11,17 @@ import (
 	"syscall"
 )
 
+var (
+	ErrUsernameRequired = errors.New("username is required for privilege drop")
+	ErrRequiresRoot     = errors.New("-login requires root privileges to change credentials")
+)
+
 func DropPrivileges(username string) error {
 	if username == "" {
-		return fmt.Errorf("username is required for privilege drop")
+		return ErrUsernameRequired
 	}
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("-login requires root privileges to change credentials")
+		return ErrRequiresRoot
 	}
 
 	u, err := user.Lookup(username)
