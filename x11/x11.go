@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -70,23 +71,37 @@ func FindFreeDisplay() (int, error) {
 		return -1, fmt.Errorf("cannot probe X displays: %w", err)
 	}
 
+	var wg sync.WaitGroup
+	var free [7]bool
+
 	for i := 0; i < 7; i++ {
-		cmd := osExec.Command("xdpyinfo", "-display", fmt.Sprintf(":%d.0", i))
-		output, _ := cmd.CombinedOutput()
+		wg.Add(1)
+		go func(display int) {
+			defer wg.Done()
+			cmd := osExec.Command("xdpyinfo", "-display", fmt.Sprintf(":%d.0", display))
+			output, _ := cmd.CombinedOutput()
 
-		// If command succeeded, display is active
-		if cmd.ProcessState != nil && cmd.ProcessState.Success() {
-			continue
+			// If command succeeded, display is active
+			if cmd.ProcessState != nil && cmd.ProcessState.Success() {
+				return
+			}
+
+			outStr := string(output)
+			if strings.Contains(outStr, "No protocol specified") || strings.Contains(outStr, "Invalid MIT") {
+				// Display is in use but inaccessible
+				return
+			}
+
+			// Display is free
+			free[display] = true
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < 7; i++ {
+		if free[i] {
+			return i, nil
 		}
-
-		outStr := string(output)
-		if strings.Contains(outStr, "No protocol specified") || strings.Contains(outStr, "Invalid MIT") {
-			// Display is in use but inaccessible
-			continue
-		}
-
-		// Display is free
-		return i, nil
 	}
 	return -1, fmt.Errorf("no free display found")
 }
