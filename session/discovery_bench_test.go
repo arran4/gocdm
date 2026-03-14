@@ -22,7 +22,7 @@ func BenchmarkDiscoverSessions(b *testing.B) {
 	// Create 100 dummy desktop files
 	for i := 0; i < 100; i++ {
 		content := fmt.Sprintf("[Desktop Entry]\nName=BenchSession%d\nExec=ls\n", i)
-		os.WriteFile(filepath.Join(xsessionsDir, fmt.Sprintf("bench%d.desktop", i)), []byte(content), 0644)
+		_ = os.WriteFile(filepath.Join(xsessionsDir, fmt.Sprintf("bench%d.desktop", i)), []byte(content), 0644)
 	}
 
 	origXSessions := XSessionsDir
@@ -39,6 +39,6 @@ func BenchmarkDiscoverSessions(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		DiscoverSessions("/tmp/does-not-exist-home")
+		_, _ = DiscoverSessions("/tmp/does-not-exist-home")
 	}
 }
