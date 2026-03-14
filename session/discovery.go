@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 var (
@@ -141,14 +142,24 @@ func (d *Discoverer) discoverCustomSessions(dir string, sessionType string) ([]S
 	}
 
 	var sessions []Session
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".desktop") {
-			session, err := d.parseDesktopFile(filepath.Join(dir, entry.Name()), sessionType)
-			if err == nil {
-				sessions = append(sessions, session)
-			}
+			wg.Add(1)
+			go func(name string) {
+				defer wg.Done()
+				session, err := d.parseDesktopFile(filepath.Join(dir, name), sessionType)
+				if err == nil {
+					mu.Lock()
+					sessions = append(sessions, session)
+					mu.Unlock()
+				}
+			}(entry.Name())
 		}
 	}
+	wg.Wait()
 	return sessions, nil
 }
 

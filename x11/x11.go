@@ -127,6 +127,24 @@ func GetVT(xtty string, display int) (string, error) {
 // startXLog: path to log file.
 // serverArgs: additional arguments for X server.
 func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTimeout int, altStartX bool, startXLog string, serverArgs []string, env []string) error {
+	if len(bin) == 0 {
+		return fmt.Errorf("session command cannot be empty")
+	}
+	for _, arg := range bin {
+		if arg == "--" {
+			return fmt.Errorf("session command cannot contain '--'")
+		}
+	}
+
+	resolvedBin, err := osExec.LookPath(bin[0])
+	if err != nil {
+		return fmt.Errorf("failed to resolve session executable %q: %w", bin[0], err)
+	}
+
+	safeBin := make([]string, len(bin))
+	copy(safeBin, bin)
+	safeBin[0] = resolvedBin
+
 	if altStartX {
 		return fmt.Errorf("altStartX is deprecated and not supported; set altstartx=no")
 	}
@@ -157,7 +175,7 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	if consoleKit {
 		cmdArgs = append(cmdArgs, "ck-launch-session")
 	}
-	cmdArgs = append(cmdArgs, bin...)
+	cmdArgs = append(cmdArgs, safeBin...)
 	cmdArgs = append(cmdArgs, "--")
 	cmdArgs = append(cmdArgs, xArgs...)
 
