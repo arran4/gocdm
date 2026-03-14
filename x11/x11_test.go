@@ -175,8 +175,6 @@ func TestSwitchVT(t *testing.T) {
 		t.Errorf("Expected SwitchVT to succeed, got err: %v", err)
 	}
 }
-
-
 func TestLaunchXSessionMissingTool(t *testing.T) {
 	origExec := osExec
 	defer func() { osExec = origExec }()
