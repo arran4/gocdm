@@ -87,7 +87,7 @@ jobs:
             echo "run_build=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if [[ "${{ github.ref }}" == refs/tags/v* || ("${{ github.event_name }}" == "workflow_dispatch" && startsWith("${{ inputs.mode }}", "release-")) ]]; then
+          if [[ "${{ github.ref }}" == refs/tags/v* || ("${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.mode }}" == release-*) ]]; then
             echo "run_release=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_release=false" >> "$GITHUB_OUTPUT"
