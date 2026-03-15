@@ -155,7 +155,7 @@ jobs:
   prepare-release-tag:
     name: Prepare release tag
     needs: [route]
-    if: ${{ github.event_name == 'workflow_dispatch' && startsWith(inputs.mode, 'release-') }}
+    if: ${{ needs.route.outputs.run_release == 'true' }}
     runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.tag.outputs.release_tag }}
@@ -171,7 +171,9 @@ jobs:
           MODE="${{ inputs.mode }}"
           OVERRIDE="${{ inputs.release_version_override }}"
 
-          if [[ -n "$OVERRIDE" ]]; then
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            next_tag="${GITHUB_REF#refs/tags/}"
+          elif [[ -n "$OVERRIDE" ]]; then
             next_tag="v$OVERRIDE"
           else
             current_tag=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --tags --max-count=1 | xargs -r git describe --tags 2>/dev/null || echo "v0.0.0")
@@ -318,7 +320,7 @@ jobs:
     name: GoReleaser
     # In practice, include all quality gates here (for example: go-test, go-vet, go-lint, format).
     needs: [route, discover, go-test, prepare-release-tag]
-    if: ${{ needs.discover.outputs.has_go == 'true' && needs.discover.outputs.has_goreleaser == 'true' && (((github.event_name == 'push') && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && startsWith(inputs.mode, 'release-'))) }}
+    if: ${{ needs.discover.outputs.has_go == 'true' && needs.discover.outputs.has_goreleaser == 'true' && needs.route.outputs.run_release == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -331,6 +333,9 @@ jobs:
       - name: Install libpam0g-dev
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+      - name: Ensure tag locally
+        run: |
+          git tag "${{ needs.prepare-release-tag.outputs.release_tag || github.ref_name }}" || true
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
