@@ -151,12 +151,9 @@ func Run(args []string, exit func(int)) {
 		var err error
 
 		if *tuiLogin {
-			var tuiErr error
-			promptedUser, password, tuiErr = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC, authenticator.Authenticate)
-			// We don't actually use 'password' from TUI after successful auth since TUI doesn't need to return it securely anymore, but let's just assign it to avoid ineffassign.
-			_ = password
-			if tuiErr != nil {
-				fmt.Fprintf(os.Stderr, "Authentication prompt failed or cancelled: %v\n", tuiErr)
+			promptedUser, password, err = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC, authenticator.Authenticate)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Authentication prompt failed or cancelled: %v\n", err)
 				exit(1)
 				return
 			}

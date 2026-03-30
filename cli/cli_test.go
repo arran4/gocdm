@@ -179,7 +179,7 @@ func TestRunLoginModePromptFailure(t *testing.T) {
 		return mockAuthenticator{}
 	}
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "", "", fmt.Errorf("prompt failed") }
-	TuiPromptCredentials = func(title, theme string) (string, string, error) { return "", "", fmt.Errorf("prompt failed") }
+	TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) { return "", "", fmt.Errorf("prompt failed") }
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +220,10 @@ func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 		return mockAuthenticator{err: fmt.Errorf("pam denied")}
 	}
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "badpass", nil }
-	TuiPromptCredentials = func(title, theme string) (string, string, error) { return "demo", "badpass", nil }
+	TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) {
+		err := authFunc("demo", "badpass")
+		return "demo", "badpass", err
+	}
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +245,7 @@ func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 	if !exited || code != 1 {
 		t.Fatalf("expected exit(1), got exited=%v code=%d", exited, code)
 	}
-	if !strings.Contains(string(out), "Authentication failed") {
+	if !strings.Contains(string(out), "Authentication prompt failed or cancelled") {
 		t.Fatalf("expected authentication failure message, got %q", string(out))
 	}
 }
@@ -267,7 +270,7 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	}()
 	NewAuthenticator = func(service string) auth.Authenticator { return mockAuthenticator{} }
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "secret", nil }
-	TuiPromptCredentials = func(title, theme string) (string, string, error) { return "demo", "secret", nil }
+	TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) { return "demo", "secret", nil }
 	IsTerminal = func(fd int) bool { return true }
 	ExecLookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	var droppedUser string
