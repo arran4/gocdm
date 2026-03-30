@@ -21,8 +21,8 @@ var Version = "dev"
 var IsTerminal = term.IsTerminal
 var NewAuthenticator = func(service string) auth.Authenticator { return auth.NewPAMAuthenticator(service) }
 var PromptCredentials = auth.PromptCredentials
-var TuiPromptCredentials = func(title, theme string) (string, string, error) {
-	return dialog.ShowLogin(title, theme)
+var TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) {
+	return dialog.ShowLogin(title, theme, authFunc)
 }
 var ExecLookPath = exec.LookPath
 var DropPrivilegesFn = DropPrivileges
@@ -151,20 +151,26 @@ func Run(args []string, exit func(int)) {
 		var err error
 
 		if *tuiLogin {
-			promptedUser, password, err = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC)
+			promptedUser, password, err = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC, authenticator.Authenticate)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Authentication prompt failed or cancelled: %v\n", err)
+				exit(1)
+				return
+			}
 		} else {
-			promptedUser, password, err = PromptCredentials(os.Stdin, os.Stdout)
-		}
-
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Authentication prompt failed: %v\n", err)
-			exit(1)
-			return
-		}
-		if err := authenticator.Authenticate(promptedUser, password); err != nil {
-			fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
-			exit(1)
-			return
+			for {
+				promptedUser, password, err = PromptCredentials(os.Stdin, os.Stdout)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Authentication prompt failed: %v\n", err)
+					exit(1)
+					return
+				}
+				if err := authenticator.Authenticate(promptedUser, password); err == nil {
+					break
+				} else {
+					fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
+				}
+			}
 		}
 		username = promptedUser
 	}
