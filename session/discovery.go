@@ -162,7 +162,7 @@ func (d *Discoverer) discoverCustomSessions(dir string, sessionType string) ([]S
 		return nil, err
 	}
 
-	var sessions []Session
+	sessions := make([]Session, 0, len(entries))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
