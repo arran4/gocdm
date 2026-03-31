@@ -191,7 +191,7 @@ func (d *Discoverer) discoverX11Sessions() ([]Session, error) {
 		return nil, err
 	}
 
-	var sessions []Session
+	sessions := make([]Session, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			path := filepath.Join(dir, entry.Name())
