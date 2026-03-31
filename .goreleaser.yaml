@@ -44,6 +44,36 @@ archives:
       - src: themes
         dst: themes
 
+nfpms:
+  - id: gocdm
+    builds:
+      - gocdm
+    formats:
+      - deb
+      - rpm
+      - apk
+    vendor: "gocdm"
+    homepage: "https://github.com/arran4/gocdm"
+    maintainer: "gocdm maintainers"
+    description: "gocdm is a console display manager"
+    license: "MIT"
+    bindir: "/usr/local/bin"
+
+  - id: gocdm-nopam
+    package_name: gocdm-nopam
+    builds:
+      - gocdm-nopam
+    formats:
+      - deb
+      - rpm
+      - apk
+    vendor: "gocdm"
+    homepage: "https://github.com/arran4/gocdm"
+    maintainer: "gocdm maintainers"
+    description: "gocdm is a console display manager (without pam support)"
+    license: "MIT"
+    bindir: "/usr/local/bin"
+
   - id: gocdm-nopam
     builds:
       - gocdm-nopam
