@@ -2,7 +2,10 @@ package dialog
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -126,7 +129,20 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 		return event
 	})
 
-	if err := app.SetRoot(flex, true).Run(); err != nil {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		if _, ok := <-sigs; ok {
+			selectionError = fmt.Errorf("cancelled")
+			app.Stop()
+		}
+	}()
+
+	err := app.SetRoot(flex, true).Run()
+	signal.Stop(sigs)
+	close(sigs)
+
+	if err != nil {
 		return -1, err
 	}
 
