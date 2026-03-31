@@ -179,7 +179,9 @@ func TestRunLoginModePromptFailure(t *testing.T) {
 		return mockAuthenticator{}
 	}
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "", "", fmt.Errorf("prompt failed") }
-	TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) { return "", "", fmt.Errorf("prompt failed") }
+	TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) {
+		return "", "", fmt.Errorf("prompt failed")
+	}
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +272,9 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	}()
 	NewAuthenticator = func(service string) auth.Authenticator { return mockAuthenticator{} }
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "secret", nil }
-	TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) { return "demo", "secret", nil }
+	TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) {
+		return "demo", "secret", nil
+	}
 	IsTerminal = func(fd int) bool { return true }
 	ExecLookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	var droppedUser string

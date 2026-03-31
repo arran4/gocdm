@@ -24,7 +24,7 @@ Cause: wrong credentials, PAM policy rejection, or missing PAM build support.
 
 Fix:
 
-- verify `-tags pam` build was used,
+- verify `-tags nopam` build was not used,
 - verify `-pam-service` target exists in `/etc/pam.d/`,
 - inspect PAM logs (`journalctl`, auth logs) for policy denial detail.
 

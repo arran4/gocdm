@@ -1,4 +1,4 @@
-//go:build !pam
+//go:build nopam
 
 package auth
 
@@ -11,5 +11,5 @@ func NewPAMAuthenticator(service string) Authenticator {
 }
 
 func (stubAuthenticator) Authenticate(username, password string) error {
-	return fmt.Errorf("pam authentication is not available in this build (rebuild with -tags pam)")
+	return fmt.Errorf("pam authentication is not available in this build (rebuild without -tags nopam)")
 }
