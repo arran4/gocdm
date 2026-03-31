@@ -44,24 +44,6 @@ archives:
       - src: themes
         dst: themes
 
-  - id: gocdm-nopam
-    builds:
-      - gocdm-nopam
-    format: tar.gz
-    name_template: >-
-      {{ .ProjectName }}_nopam_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
-    files:
-      - license.txt
-      - README.md
-      - profile.sh
-      - src: themes
-        dst: themes
-
 nfpms:
   - id: gocdm
     builds:
@@ -91,6 +73,10 @@ nfpms:
     description: "gocdm is a console display manager (without pam support)"
     license: "MIT"
     bindir: "/usr/local/bin"
+
+  - id: gocdm-nopam
+    builds:
+      - gocdm-nopam
 
 checksum:
   name_template: 'checksums.txt'
