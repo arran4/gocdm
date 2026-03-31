@@ -3,6 +3,8 @@ package dialog
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -200,7 +202,20 @@ func ShowLogin(title string, theme string, authFunc func(string, string) error) 
 		return event
 	})
 
-	if err := app.SetRoot(flex, true).Run(); err != nil {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		if _, ok := <-sigs; ok {
+			selectionError = fmt.Errorf("cancelled")
+			app.Stop()
+		}
+	}()
+
+	err = app.SetRoot(flex, true).Run()
+	signal.Stop(sigs)
+	close(sigs)
+
+	if err != nil {
 		return "", "", err
 	}
 
