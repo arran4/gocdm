@@ -90,8 +90,8 @@ func buildLoginForm(app *tview.Application, title string, username, password *st
 	}
 
 	form.AddInputField("Username", "", 30, nil, func(text string) {
-			*username = text
-		}).
+		*username = text
+	}).
 		AddPasswordField("Password", "", 30, '*', func(text string) {
 			*password = text
 		}).

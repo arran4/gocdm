@@ -8,10 +8,10 @@
 go build -o gocdm ./cmd/gocdm
 ```
 
-### PAM-enabled binary
+### PAM-disabled binary
 
 ```bash
-go build -tags pam -o gocdm ./cmd/gocdm
+go build -tags nopam -o gocdm ./cmd/gocdm
 ```
 
 ## Suggested install paths
@@ -24,7 +24,7 @@ sudo install -m 0755 gocdm /usr/local/bin/gocdm
 
 - Debian/Ubuntu: package as `gocdm`, include optional PAM-enabled build variant.
 - Fedora/RHEL: package as `gocdm`, wire service docs for `getty@tty1` replacement.
-- Arch Linux: provide PKGBUILD variants or split package (`gocdm`, `gocdm-pam`).
+- Arch Linux: provide PKGBUILD variants or split package (`gocdm`, `gocdm-nopam`).
 
 For all distros, document:
 

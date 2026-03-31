@@ -31,11 +31,11 @@ go build -o gocdm ./cmd/gocdm
 sudo install -m 0755 gocdm /usr/local/bin/gocdm
 ```
 
-Build and install the PAM-enabled binary:
+Build and install the binary without PAM support:
 
 ```bash
-go build -tags pam -o gocdm-pam ./cmd/gocdm
-sudo install -m 0755 gocdm-pam /usr/local/bin/gocdm
+go build -tags nopam -o gocdm-nopam ./cmd/gocdm
+sudo install -m 0755 gocdm-nopam /usr/local/bin/gocdm
 ```
 
 In login mode, GoCDM authenticates credentials through PAM, prepares a sanitized session environment (`HOME`, `SHELL`, `USER`, `LOGNAME`, plus `/etc/security/pam_env.conf`), and drops privileges to the authenticated account before launching the selected session.
@@ -129,7 +129,7 @@ Always release returned strings with `GoCDMFreeCString`.
 GoCDM requires a PAM-enabled build for `-login` mode:
 
 ```bash
-go build -tags pam -o gocdm ./cmd/gocdm
+go build -o gocdm ./cmd/gocdm
 ```
 
 Default PAM service is `login` (override with `-pam-service`). Typical stacks:
@@ -138,7 +138,7 @@ Default PAM service is `login` (override with `-pam-service`). Typical stacks:
 * Fedora/RHEL: `login` service in `/etc/pam.d/login`
 * Arch Linux: `login` service in `/etc/pam.d/login`
 
-If PAM support is missing at build time, authentication fails with a clear error indicating to rebuild with `-tags pam`.
+If PAM support is missing at build time, authentication fails with a clear error indicating to rebuild without `-tags nopam`.
 
 #### Failure modes and UX
 

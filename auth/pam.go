@@ -1,4 +1,4 @@
-//go:build pam
+//go:build !nopam
 
 package auth
 

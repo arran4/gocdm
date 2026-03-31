@@ -6,20 +6,20 @@ builds:
     main: ./cmd/gocdm
     binary: gocdm
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     goos:
       - linux
     goarch:
       - amd64
       - arm64
 
-  - id: gocdm-pam
+  - id: gocdm-nopam
     main: ./cmd/gocdm
-    binary: gocdm-pam
+    binary: gocdm-nopam
     flags:
-      - -tags=pam
+      - -tags=nopam
     env:
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - linux
     goarch:
@@ -44,12 +44,42 @@ archives:
       - src: themes
         dst: themes
 
-  - id: gocdm-pam
+nfpms:
+  - id: gocdm
     builds:
-      - gocdm-pam
+      - gocdm
+    formats:
+      - deb
+      - rpm
+      - apk
+    vendor: "gocdm"
+    homepage: "https://github.com/arran4/gocdm"
+    maintainer: "gocdm maintainers"
+    description: "gocdm is a console display manager"
+    license: "MIT"
+    bindir: "/usr/local/bin"
+
+  - id: gocdm-nopam
+    package_name: gocdm-nopam
+    builds:
+      - gocdm-nopam
+    formats:
+      - deb
+      - rpm
+      - apk
+    vendor: "gocdm"
+    homepage: "https://github.com/arran4/gocdm"
+    maintainer: "gocdm maintainers"
+    description: "gocdm is a console display manager (without pam support)"
+    license: "MIT"
+    bindir: "/usr/local/bin"
+
+  - id: gocdm-nopam
+    builds:
+      - gocdm-nopam
     format: tar.gz
     name_template: >-
-      {{ .ProjectName }}_pam_
+      {{ .ProjectName }}_nopam_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "386" }}i386
