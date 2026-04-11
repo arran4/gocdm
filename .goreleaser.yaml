@@ -11,6 +11,13 @@ builds:
     goarch:
       - amd64
       - arm64
+    overrides:
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+          - CGO_ENABLED=1
+
   - id: gocdm-nopam
     main: ./cmd/gocdm
     binary: gocdm-nopam
@@ -22,6 +29,7 @@ builds:
       - linux
     goarch:
       - amd64
+      - arm64
 archives:
   - id: gocdm
     files:

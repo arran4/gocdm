@@ -311,9 +311,20 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install libpam0g-dev
+      - name: Install libpam0g-dev and cross-compilation tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo sed -i "s/Types: deb/Types: deb\nArchitectures: amd64/g" /etc/apt/sources.list.d/ubuntu.sources
+          sudo bash -c 'cat << "INNER" > /etc/apt/sources.list.d/ubuntu-ports.sources
+          Types: deb
+          URIs: http://ports.ubuntu.com/ubuntu-ports/
+          Suites: noble noble-updates noble-backports noble-security
+          Components: main universe restricted multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          Architectures: arm64
+          INNER'
+          sudo apt-get update && sudo apt-get install -y libpam0g-dev libpam0g-dev:arm64 gcc-aarch64-linux-gnu
       - run: go build ./...
 
   goreleaser:
@@ -330,9 +341,20 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install libpam0g-dev
+      - name: Install libpam0g-dev and cross-compilation tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo sed -i "s/Types: deb/Types: deb\nArchitectures: amd64/g" /etc/apt/sources.list.d/ubuntu.sources
+          sudo bash -c 'cat << "INNER" > /etc/apt/sources.list.d/ubuntu-ports.sources
+          Types: deb
+          URIs: http://ports.ubuntu.com/ubuntu-ports/
+          Suites: noble noble-updates noble-backports noble-security
+          Components: main universe restricted multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          Architectures: arm64
+          INNER'
+          sudo apt-get update && sudo apt-get install -y libpam0g-dev libpam0g-dev:arm64 gcc-aarch64-linux-gnu
       - name: Ensure tag locally
         run: |
           git tag "${{ needs.prepare-release-tag.outputs.release_tag || github.ref_name }}" || true
