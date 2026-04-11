@@ -1,6 +1,5 @@
 version: 2
 project_name: gocdm
-
 builds:
   - id: gocdm
     main: ./cmd/gocdm
@@ -12,7 +11,6 @@ builds:
     goarch:
       - amd64
       - arm64
-
   - id: gocdm-nopam
     main: ./cmd/gocdm
     binary: gocdm-nopam
@@ -24,69 +22,55 @@ builds:
       - linux
     goarch:
       - amd64
-
 archives:
   - id: gocdm
-    builds:
-      - gocdm
-    format: tar.gz
-    name_template: >-
-      {{ .ProjectName }}_
-      {{- title .Os }}_
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{- else }}{{ .Arch }}{{ end }}
-      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    name_template: '{{ .ProjectName }}_ {{- title .Os }}_ {{- if eq .Arch "amd64"
+      }}x86_64 {{- else if eq .Arch "386" }}i386 {{- else }}{{ .Arch }}{{ end }} {{-
+      if .Arm }}v{{ .Arm }}{{ end }}'
     files:
       - license.txt
       - README.md
       - profile.sh
       - src: themes
         dst: themes
-
-nfpms:
-  - id: gocdm
-    builds:
+    ids:
       - gocdm
     formats:
-      - deb
-      - rpm
-      - apk
-    vendor: "gocdm"
-    homepage: "https://github.com/arran4/gocdm"
-    maintainer: "gocdm maintainers"
-    description: "gocdm is a console display manager"
-    license: "MIT"
-    bindir: "/usr/local/bin"
-
-  - id: gocdm-nopam
-    package_name: gocdm-nopam
-    builds:
-      - gocdm-nopam
+      - tar.gz
+nfpms:
+  - id: gocdm
     formats:
       - deb
       - rpm
       - apk
-    vendor: "gocdm"
-    homepage: "https://github.com/arran4/gocdm"
-    maintainer: "gocdm maintainers"
-    description: "gocdm is a console display manager (without pam support)"
-    license: "MIT"
-    bindir: "/usr/local/bin"
-
+    vendor: gocdm
+    homepage: https://github.com/arran4/gocdm
+    maintainer: gocdm maintainers <example@example.com>
+    description: gocdm is a console display manager
+    license: MIT
+    bindir: /usr/local/bin
+    ids:
+      - gocdm
   - id: gocdm-nopam
-    builds:
+    package_name: gocdm-nopam
+    formats:
+      - deb
+      - rpm
+      - apk
+    vendor: gocdm
+    homepage: https://github.com/arran4/gocdm
+    maintainer: gocdm maintainers <example@example.com>
+    description: gocdm is a console display manager (without pam support)
+    license: MIT
+    bindir: /usr/local/bin
+    ids:
       - gocdm-nopam
-
 checksum:
-  name_template: 'checksums.txt'
-
+  name_template: checksums.txt
 release:
   mode: replace
-
 snapshot:
-  name_template: "{{ .Tag }}-next"
-
+  version_template: '{{ .Tag }}-next'
 changelog:
   sort: asc
   filters:
