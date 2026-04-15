@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"github.com/arran4/gocdm/auth"
+	"github.com/arran4/gocdm/session"
 	"github.com/arran4/gocdm/x11"
 	"io"
 	"os"
@@ -102,6 +103,12 @@ func TestRunDryRunNoSessions(t *testing.T) {
 	})
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("XDG_CONFIG_HOME", tmpHome)
+
+	origShellsFile := session.ShellsFile
+	session.ShellsFile = tmpHome + "/empty-shells-file-doesnt-exist"
+	t.Cleanup(func() {
+		session.ShellsFile = origShellsFile
+	})
 	exited := false
 	code := -1
 	mockExit := func(c int) {

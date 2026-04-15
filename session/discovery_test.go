@@ -30,8 +30,9 @@ func TestDiscoverSessions(t *testing.T) {
 	waylandSessionsDir := filepath.Join(tmpDir, "usr", "share", "wayland-sessions")
 	userHome := filepath.Join(tmpDir, "home", "user")
 	userConfigWayland := filepath.Join(userHome, ".config", "wayland-sessions")
+	etcDir := filepath.Join(tmpDir, "etc")
 
-	dirs := []string{x11Dir, xsessionsDir, waylandSessionsDir, userHome, userConfigWayland}
+	dirs := []string{x11Dir, xsessionsDir, waylandSessionsDir, userHome, userConfigWayland, etcDir}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
 			t.Fatal(err)
@@ -72,19 +73,31 @@ func TestDiscoverSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// 6. Shells file
+	shellsContent := "# /etc/shells\n" +
+		"/not/a/real/path/to/shell\n" + // will not be found by exec.LookPath
+		testCommand + "\n"
+	shellsPath := filepath.Join(etcDir, "shells")
+	if err := os.WriteFile(shellsPath, []byte(shellsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Save original vars
 	origX11 := X11SessionsDir
 	origXSessions := XSessionsDir
 	origWaylandSessions := WaylandSessionsDir
+	origShellsFile := ShellsFile
 	defer func() {
 		X11SessionsDir = origX11
 		XSessionsDir = origXSessions
 		WaylandSessionsDir = origWaylandSessions
+		ShellsFile = origShellsFile
 	}()
 
 	X11SessionsDir = x11Dir
 	XSessionsDir = xsessionsDir
 	WaylandSessionsDir = waylandSessionsDir
+	ShellsFile = shellsPath
 
 	// Test Discovery
 	sessions, err := DiscoverSessions(userHome)
@@ -98,8 +111,9 @@ func TestDiscoverSessions(t *testing.T) {
 	// 3. legacy_x11 (Type X)
 	// 4. Standard X Session (Type X)
 	// 5. Wayland Session (Type W)
+	// 6. Shell Session (Type C)
 
-	expectedCount := 5
+	expectedCount := 6
 	if len(sessions) != expectedCount {
 		t.Errorf("Expected %d sessions, got %d", expectedCount, len(sessions))
 		for _, s := range sessions {
@@ -119,6 +133,7 @@ func TestDiscoverSessions(t *testing.T) {
 		"legacy_x11":                  "X",
 		"Standard X Session":          "X",
 		"Wayland Session":             "W",
+		filepath.Base(testCommand) + " shell": "C",
 	}
 
 	for name, typ := range expectations {
