@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -67,7 +68,7 @@ func buildLoginForm(app *tview.Application, title string, username, password *st
 	loginFunc := func() {
 		// Try to read directly in case the on-change didn't fire yet
 		if u := form.GetFormItemByLabel("Username"); u != nil {
-			*username = u.(*tview.InputField).GetText()
+			*username = strings.TrimSpace(u.(*tview.InputField).GetText())
 		}
 		if p := form.GetFormItemByLabel("Password"); p != nil {
 			*password = p.(*tview.InputField).GetText()
@@ -92,7 +93,7 @@ func buildLoginForm(app *tview.Application, title string, username, password *st
 	}
 
 	form.AddInputField("Username", "", 30, nil, func(text string) {
-		*username = text
+		*username = strings.TrimSpace(text)
 	}).
 		AddPasswordField("Password", "", 30, '*', func(text string) {
 			*password = text
