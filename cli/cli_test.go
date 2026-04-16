@@ -463,6 +463,13 @@ func TestRunConsoleEmptyCommand(t *testing.T) {
 		}
 	})
 	configPath := tmpDir + "/cdmrc"
+	// To avoid finding shells, empty the file
+	origShellsFile := session.ShellsFile
+	session.ShellsFile = tmpDir + "/empty-shells"
+	os.WriteFile(session.ShellsFile, []byte(""), 0o644)
+	t.Cleanup(func() {
+		session.ShellsFile = origShellsFile
+	})
 	content := `binlist=("")
 namelist=("Empty")
 flaglist=("C")`
