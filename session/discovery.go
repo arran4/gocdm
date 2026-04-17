@@ -15,6 +15,7 @@ var (
 	X11SessionsDir     = "/etc/X11/Sessions"
 	XSessionsDir       = "/usr/share/xsessions"
 	WaylandSessionsDir = "/usr/share/wayland-sessions"
+	ShellsFile         = "/etc/shells"
 )
 
 type Session struct {
@@ -121,6 +122,14 @@ func (d *Discoverer) Discover(userHome string) ([]Session, error) {
 		}
 	}
 
+	// Try shell sessions from ShellsFile
+	shellSessions, err := d.discoverShellSessions()
+	if err == nil {
+		for _, s := range shellSessions {
+			addSession(s)
+		}
+	}
+
 	// Sort sessions by name
 	sort.SliceStable(sessions, func(i, j int) bool {
 		return sessions[i].Name < sessions[j].Name
@@ -212,6 +221,39 @@ func (d *Discoverer) discoverXSessions() ([]Session, error) {
 
 func (d *Discoverer) discoverWaylandSessions() ([]Session, error) {
 	return d.discoverCustomSessions(WaylandSessionsDir, "W")
+}
+
+func (d *Discoverer) discoverShellSessions() ([]Session, error) {
+	file, err := os.Open(ShellsFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var sessions []Session
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Attempt to resolve the shell binary
+		if _, err := d.ExecLookPath(line); err != nil {
+			continue // Skip invalid shells
+		}
+
+		name := filepath.Base(line)
+
+		sessions = append(sessions, Session{
+			Name: name,
+			Exec: line,
+			Type: "C",
+			Path: ShellsFile,
+		})
+	}
+
+	return sessions, scanner.Err()
 }
 
 // stripFreedesktopExecVariables removes Freedesktop Exec field codes from the command line.
