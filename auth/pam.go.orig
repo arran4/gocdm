@@ -22,7 +22,7 @@ func NewPAMAuthenticator(service string) Authenticator {
 }
 
 func getTTY() string {
-	if tty, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", os.Stdin.Fd())); err == nil && strings.HasPrefix(tty, "/dev/") {
+	if tty, err := os.Readlink("/proc/self/fd/0"); err == nil && strings.HasPrefix(tty, "/dev/") {
 		return strings.TrimPrefix(tty, "/dev/")
 	}
 	return ""
@@ -38,8 +38,8 @@ func (a *pamAuthenticator) Authenticate(username, password string) error {
 		case pam.PromptEchoOn:
 			return username, nil
 		case pam.ErrorMsg, pam.TextInfo:
-			if s := strings.TrimSpace(msg); s != "" {
-				pamMsgs = append(pamMsgs, s)
+			if msg != "" {
+				pamMsgs = append(pamMsgs, strings.TrimSpace(msg))
 			}
 			return "", nil
 		default:
@@ -61,7 +61,6 @@ func (a *pamAuthenticator) Authenticate(username, password string) error {
 		}
 		return err
 	}
-	pamMsgs = nil
 	if err := tx.AcctMgmt(0); err != nil {
 		if len(pamMsgs) > 0 {
 			return fmt.Errorf("account management failed: %w: %s", err, strings.Join(pamMsgs, "; "))
