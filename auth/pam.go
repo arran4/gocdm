@@ -22,7 +22,7 @@ func NewPAMAuthenticator(service string) Authenticator {
 }
 
 func getTTY() string {
-	if tty, err := os.Readlink("/proc/self/fd/0"); err == nil && strings.HasPrefix(tty, "/dev/") {
+	if tty, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", os.Stdin.Fd())); err == nil && strings.HasPrefix(tty, "/dev/") {
 		return strings.TrimPrefix(tty, "/dev/")
 	}
 	return ""
