@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"github.com/arran4/gocdm/auth"
+	"github.com/arran4/gocdm/session"
 	"github.com/arran4/gocdm/x11"
 	"io"
 	"os"
@@ -100,6 +101,19 @@ func TestRunDryRunNoSessions(t *testing.T) {
 			t.Errorf("cleanup failed: %v", err)
 		}
 	})
+
+	// Create an empty shells file so discoverShellSessions returns nothing.
+	tmpShells, err := os.CreateTemp(tmpHome, "shells")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpShells.Close()
+	origShellsFile := session.ShellsFile
+	session.ShellsFile = tmpShells.Name()
+	t.Cleanup(func() {
+		session.ShellsFile = origShellsFile
+	})
+
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("XDG_CONFIG_HOME", tmpHome)
 	exited := false
@@ -344,6 +358,7 @@ func TestRunWaylandSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() {
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
@@ -389,7 +404,18 @@ func TestRunConsoleSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Create an empty shells file so discoverShellSessions returns nothing.
+	tmpShells, err := os.CreateTemp(tmpDir, "shells")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpShells.Close()
+	origShellsFile := session.ShellsFile
+	session.ShellsFile = tmpShells.Name()
+
 	t.Cleanup(func() {
+		session.ShellsFile = origShellsFile
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
 		}
@@ -420,7 +446,18 @@ func TestRunXSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Create an empty shells file so discoverShellSessions returns nothing.
+	tmpShells, err := os.CreateTemp(tmpDir, "shells")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpShells.Close()
+	origShellsFile := session.ShellsFile
+	session.ShellsFile = tmpShells.Name()
+
 	t.Cleanup(func() {
+		session.ShellsFile = origShellsFile
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
 		}
@@ -450,7 +487,18 @@ func TestRunConsoleEmptyCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	// Create an empty shells file so discoverShellSessions returns nothing.
+	tmpShells, err := os.CreateTemp(tmpDir, "shells")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpShells.Close()
+	origShellsFile := session.ShellsFile
+	session.ShellsFile = tmpShells.Name()
+
 	t.Cleanup(func() {
+		session.ShellsFile = origShellsFile
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
 		}
