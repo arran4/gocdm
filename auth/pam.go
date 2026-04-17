@@ -61,6 +61,7 @@ func (a *pamAuthenticator) Authenticate(username, password string) error {
 		}
 		return err
 	}
+	pamMsgs = nil
 	if err := tx.AcctMgmt(0); err != nil {
 		if len(pamMsgs) > 0 {
 			return fmt.Errorf("account management failed: %w: %s", err, strings.Join(pamMsgs, "; "))

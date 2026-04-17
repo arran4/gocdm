@@ -49,7 +49,7 @@ func (a *pamAuthenticator) Authenticate(username, password string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.End()
+	defer func() { _ = tx.End() }()
 
 	if tty := getTTY(); tty != "" {
 		_ = tx.SetItem(pam.Tty, tty)
