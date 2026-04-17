@@ -38,8 +38,8 @@ func (a *pamAuthenticator) Authenticate(username, password string) error {
 		case pam.PromptEchoOn:
 			return username, nil
 		case pam.ErrorMsg, pam.TextInfo:
-			if msg != "" {
-				pamMsgs = append(pamMsgs, strings.TrimSpace(msg))
+			if s := strings.TrimSpace(msg); s != "" {
+				pamMsgs = append(pamMsgs, s)
 			}
 			return "", nil
 		default:
