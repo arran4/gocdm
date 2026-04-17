@@ -11,6 +11,10 @@ builds:
     goarch:
       - amd64
       - arm64
+    ldflags: &common-ldflags
+      - -s
+      - -w
+      - -X github.com/arran4/gocdm/cli.Version={{.Version}}
     overrides:
       - goos: linux
         goarch: arm64
@@ -30,6 +34,7 @@ builds:
     goarch:
       - amd64
       - arm64
+    ldflags: *common-ldflags
 archives:
   - id: gocdm
     files:
