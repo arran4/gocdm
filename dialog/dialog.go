@@ -45,7 +45,7 @@ func MapColor(colorName string) tcell.Color {
 // defaultIdx is the index of the option to pre-select.
 // theme is the path to the dialogrc file.
 // Returns the index of the selected option (0-based relative to options), or error.
-func ShowMenu(title string, options []string, details []string, startIdx int, defaultIdx int, theme string) (int, error) {
+func ShowMenu(title string, options []string, details []string, startIdx int, defaultIdx int, theme string, version string) (int, error) {
 	app := tview.NewApplication()
 	if testScreen != nil {
 		app.SetScreen(testScreen)
@@ -98,6 +98,21 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 
 	applyScreenTheme(app, flex, rc)
 
+	versionView := tview.NewTextView().
+		SetText(version).
+		SetTextAlign(tview.AlignRight).
+		SetDynamicColors(true).
+		SetTextColor(tcell.ColorDarkGray)
+	if rc != nil {
+		if attr, ok := rc.Attributes["title_color"]; ok {
+			versionView.SetTextColor(MapColor(attr.Foreground))
+		}
+	}
+
+	rootFlex := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(flex, 0, 1, true).
+		AddItem(versionView, 1, 1, false)
+
 	var selectedIdx = -1
 	var selectionError error
 
@@ -138,7 +153,7 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 		}
 	}()
 
-	err := app.SetRoot(flex, true).Run()
+	err := app.SetRoot(rootFlex, true).Run()
 	signal.Stop(sigs)
 	close(sigs)
 

@@ -21,8 +21,8 @@ var Version = "dev"
 var IsTerminal = term.IsTerminal
 var NewAuthenticator = func(service string) auth.Authenticator { return auth.NewPAMAuthenticator(service) }
 var PromptCredentials = auth.PromptCredentials
-var TuiPromptCredentials = func(title, theme string, authFunc func(string, string) error) (string, string, error) {
-	return dialog.ShowLogin(title, theme, authFunc)
+var TuiPromptCredentials = func(title, theme, version string, authFunc func(string, string) error) (string, string, error) {
+	return dialog.ShowLogin(title, theme, version, authFunc)
 }
 var ExecLookPath = exec.LookPath
 var DropPrivilegesFn = DropPrivileges
@@ -152,7 +152,7 @@ func Run(args []string, exit func(int)) {
 
 		if *tuiLogin {
 			var tuiErr error
-			promptedUser, password, tuiErr = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC, authenticator.Authenticate)
+			promptedUser, password, tuiErr = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC, Version, authenticator.Authenticate)
 			// We don't actually use 'password' from TUI after successful auth since TUI doesn't need to return it securely anymore, but let's just assign it to avoid ineffassign.
 			_ = password
 			if tuiErr != nil {
@@ -194,7 +194,7 @@ func Run(args []string, exit func(int)) {
 			}
 		}
 
-		idx, err := dialog.ShowMenu("Console Display Manager", optionNames, details, cfg.CountFrom, defaultIdx, cfg.DialogRC)
+		idx, err := dialog.ShowMenu("Console Display Manager", optionNames, details, cfg.CountFrom, defaultIdx, cfg.DialogRC, Version)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Selection cancelled or error: %v\n", err)
 			exit(2)

@@ -58,7 +58,7 @@ func TestShowMenu(t *testing.T) {
 	// StartIdx: 0
 	// DefaultIdx: 0
 	// Theme: ""
-	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, "")
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, "", "dev")
 	if err != nil {
 		t.Fatalf("ShowMenu returned error: %v", err)
 	}
@@ -93,7 +93,7 @@ item_selected_color = (GREEN,BLACK,ON)
 		s.InjectKey(tcell.KeyEnter, ' ', tcell.ModNone)
 	}()
 
-	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, themeFile)
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, themeFile, "dev")
 	if err != nil {
 		t.Fatalf("ShowMenu returned error: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestShowMenuDefaultSelection(t *testing.T) {
 	}()
 
 	// DefaultIdx: 1
-	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 1, "")
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 1, "", "dev")
 	if err != nil {
 		t.Fatalf("ShowMenu returned error: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestShowMenuCancel(t *testing.T) {
 		s.InjectKey(tcell.KeyEscape, ' ', tcell.ModNone)
 	}()
 
-	_, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, "")
+	_, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, nil, 0, 0, "", "dev")
 	if err == nil {
 		t.Fatal("Expected error for cancelled menu, got nil")
 	}
@@ -173,7 +173,7 @@ func TestShowMenuDetailsModal(t *testing.T) {
 		s.InjectKey(tcell.KeyEnter, ' ', tcell.ModNone)
 	}()
 
-	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, []string{"Detail A", "Detail B"}, 0, 0, "")
+	idx, err := ShowMenu("Test Menu", []string{"Option A", "Option B"}, []string{"Detail A", "Detail B"}, 0, 0, "", "dev")
 	if err != nil {
 		t.Fatalf("ShowMenu returned error: %v", err)
 	}
