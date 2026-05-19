@@ -197,11 +197,13 @@ func ShowLogin(title string, theme string, version string, authFunc func(string,
 	versionView := tview.NewTextView().
 		SetText(version).
 		SetTextAlign(tview.AlignRight).
-		SetDynamicColors(true).
 		SetTextColor(tcell.ColorDarkGray)
 	if rc != nil {
 		if attr, ok := rc.Attributes["title_color"]; ok {
 			versionView.SetTextColor(MapColor(attr.Foreground))
+		}
+		if attr, ok := rc.Attributes["screen_color"]; ok {
+			versionView.SetBackgroundColor(MapColor(attr.Background))
 		}
 	}
 

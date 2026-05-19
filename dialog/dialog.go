@@ -101,11 +101,13 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 	versionView := tview.NewTextView().
 		SetText(version).
 		SetTextAlign(tview.AlignRight).
-		SetDynamicColors(true).
 		SetTextColor(tcell.ColorDarkGray)
 	if rc != nil {
 		if attr, ok := rc.Attributes["title_color"]; ok {
 			versionView.SetTextColor(MapColor(attr.Foreground))
+		}
+		if attr, ok := rc.Attributes["screen_color"]; ok {
+			versionView.SetBackgroundColor(MapColor(attr.Background))
 		}
 	}
 
@@ -135,7 +137,7 @@ func ShowMenu(title string, options []string, details []string, startIdx int, de
 					SetText(detailText).
 					AddButtons([]string{"OK"}).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-						app.SetRoot(flex, true)
+						app.SetRoot(rootFlex, true)
 					})
 				app.SetRoot(modal, false)
 				return nil
