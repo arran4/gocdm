@@ -27,6 +27,7 @@ type Session struct {
 
 type Discoverer struct {
 	ExecLookPath func(string) (string, error)
+	ShellsFile   string
 }
 
 func NewDiscoverer() *Discoverer {
@@ -38,6 +39,7 @@ func NewDiscoverer() *Discoverer {
 	cache := make(map[string]result)
 
 	return &Discoverer{
+		ShellsFile: ShellsFile,
 		ExecLookPath: func(file string) (string, error) {
 			mu.Lock()
 			res, ok := cache[file]
@@ -224,7 +226,7 @@ func (d *Discoverer) discoverWaylandSessions() ([]Session, error) {
 }
 
 func (d *Discoverer) discoverShellSessions() ([]Session, error) {
-	file, err := os.Open(ShellsFile)
+	file, err := os.Open(d.ShellsFile)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +258,7 @@ func (d *Discoverer) discoverShellSessions() ([]Session, error) {
 			Name: name,
 			Exec: shellPath,
 			Type: "C",
-			Path: ShellsFile,
+			Path: d.ShellsFile,
 		})
 	}
 

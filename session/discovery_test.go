@@ -84,21 +84,20 @@ func TestDiscoverSessions(t *testing.T) {
 	origX11 := X11SessionsDir
 	origXSessions := XSessionsDir
 	origWaylandSessions := WaylandSessionsDir
-	origShellsFile := ShellsFile
 	defer func() {
 		X11SessionsDir = origX11
 		XSessionsDir = origXSessions
 		WaylandSessionsDir = origWaylandSessions
-		ShellsFile = origShellsFile
 	}()
 
 	X11SessionsDir = x11Dir
 	XSessionsDir = xsessionsDir
 	WaylandSessionsDir = waylandSessionsDir
-	ShellsFile = shellsFilePath
 
 	// Test Discovery
-	sessions, err := DiscoverSessions(userHome)
+	d := NewDiscoverer()
+	d.ShellsFile = shellsFilePath
+	sessions, err := d.Discover(userHome)
 	if err != nil {
 		t.Fatalf("DiscoverSessions failed: %v", err)
 	}
@@ -160,13 +159,8 @@ func TestDiscoverShellSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	origShellsFile := ShellsFile
-	defer func() {
-		ShellsFile = origShellsFile
-	}()
-	ShellsFile = shellsFilePath
-
 	d := NewDiscoverer()
+	d.ShellsFile = shellsFilePath
 	// Mock ExecLookPath to only return testCommand successfully
 	d.ExecLookPath = func(file string) (string, error) {
 		if file == testCommand {
