@@ -238,16 +238,23 @@ func (d *Discoverer) discoverShellSessions() ([]Session, error) {
 			continue
 		}
 
+		// Use only the first field to ignore trailing comments/whitespace
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		shellPath := fields[0]
+
 		// Attempt to resolve the shell binary
-		if _, err := d.ExecLookPath(line); err != nil {
+		if _, err := d.ExecLookPath(shellPath); err != nil {
 			continue // Skip invalid shells
 		}
 
-		name := filepath.Base(line)
+		name := filepath.Base(shellPath)
 
 		sessions = append(sessions, Session{
 			Name: name,
-			Exec: line,
+			Exec: shellPath,
 			Type: "C",
 			Path: ShellsFile,
 		})

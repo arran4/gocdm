@@ -1,5 +1,0 @@
-1. Read the memory again. It says: "Shell login options are represented by session Type: "C" (Console) and are dynamically discovered by parsing valid executables from the file specified by session.ShellsFile (defaults to /etc/shells)."
-2. Check `session/discovery.go`. Add `ShellsFile` variable defaulted to `"/etc/shells"`.
-3. Add a method `discoverShellSessions()` in `session/discovery.go` to parse `ShellsFile` (ignore comments and empty lines) and create sessions of type `"C"`.
-4. Call `discoverShellSessions()` in `Discover()` before returning.
-5. Add tests in `session/discovery_test.go` to test that shell login options are included.
