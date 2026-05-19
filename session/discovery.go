@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,7 @@ type Session struct {
 type Discoverer struct {
 	ExecLookPath func(string) (string, error)
 	ShellsFile   string
+	OpenShells   func(string) (io.ReadCloser, error)
 }
 
 func NewDiscoverer() *Discoverer {
@@ -40,6 +42,9 @@ func NewDiscoverer() *Discoverer {
 
 	return &Discoverer{
 		ShellsFile: ShellsFile,
+		OpenShells: func(path string) (io.ReadCloser, error) {
+			return os.Open(path)
+		},
 		ExecLookPath: func(file string) (string, error) {
 			mu.Lock()
 			res, ok := cache[file]
@@ -226,7 +231,7 @@ func (d *Discoverer) discoverWaylandSessions() ([]Session, error) {
 }
 
 func (d *Discoverer) discoverShellSessions() ([]Session, error) {
-	file, err := os.Open(d.ShellsFile)
+	file, err := d.OpenShells(d.ShellsFile)
 	if err != nil {
 		return nil, err
 	}

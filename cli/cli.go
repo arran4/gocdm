@@ -28,6 +28,7 @@ var ExecLookPath = exec.LookPath
 var DropPrivilegesFn = DropPrivileges
 var ExecProgramFn = ExecProgram
 var LaunchXSessionFn = x11.LaunchXSession
+var DiscoverSessionsFn = session.DiscoverSessions
 var osStat = os.Stat
 var osReadlink = os.Readlink
 
@@ -102,7 +103,7 @@ func Run(args []string, exit func(int)) {
 	var sessions []session.Session
 	if len(cfg.BinList) == 0 {
 		home, _ := os.UserHomeDir()
-		sessions, err = session.DiscoverSessions(home)
+		sessions, err = DiscoverSessionsFn(home)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error discovering sessions: %v\n", err)
 			exit(1)

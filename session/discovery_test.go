@@ -2,8 +2,10 @@ package session
 
 import (
 	_ "embed"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,13 +74,8 @@ func TestDiscoverSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 6. Shells file
-	shellsFilePath := filepath.Join(tmpDir, "shells")
 	shellsContent := "# /etc/shells: valid login shells\n" +
 		testCommand + "\n"
-	if err := os.WriteFile(shellsFilePath, []byte(shellsContent), 0644); err != nil {
-		t.Fatal(err)
-	}
 
 	// Save original vars
 	origX11 := X11SessionsDir
@@ -96,7 +93,9 @@ func TestDiscoverSessions(t *testing.T) {
 
 	// Test Discovery
 	d := NewDiscoverer()
-	d.ShellsFile = shellsFilePath
+	d.OpenShells = func(path string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(shellsContent)), nil
+	}
 	sessions, err := d.Discover(userHome)
 	if err != nil {
 		t.Fatalf("DiscoverSessions failed: %v", err)
@@ -150,17 +149,15 @@ func TestDiscoverShellSessions(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	testCommand := setupPathExecutable(t, tmpDir)
 
-	shellsFilePath := filepath.Join(tmpDir, "shells")
 	shellsContent := "# /etc/shells: valid login shells\n" +
 		"/bin/false\n" + // Assuming it's missing or we mock it via missing exec
 		testCommand + "\n" +
 		"   \n" // empty line
-	if err := os.WriteFile(shellsFilePath, []byte(shellsContent), 0644); err != nil {
-		t.Fatal(err)
-	}
 
 	d := NewDiscoverer()
-	d.ShellsFile = shellsFilePath
+	d.OpenShells = func(path string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(shellsContent)), nil
+	}
 	// Mock ExecLookPath to only return testCommand successfully
 	d.ExecLookPath = func(file string) (string, error) {
 		if file == testCommand {
