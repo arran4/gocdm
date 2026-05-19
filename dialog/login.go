@@ -149,7 +149,7 @@ func startClock(app *tview.Application, clockText *tview.TextView) {
 
 // ShowLogin displays a login form using tview.
 // Returns the username, password, and error (if cancelled or failed).
-func ShowLogin(title string, theme string, authFunc func(string, string) error) (string, string, error) {
+func ShowLogin(title string, theme string, version string, authFunc func(string, string) error) (string, string, error) {
 	app := tview.NewApplication()
 	if testScreen != nil {
 		app.SetScreen(testScreen)
@@ -194,6 +194,23 @@ func ShowLogin(title string, theme string, authFunc func(string, string) error) 
 
 	applyLoginTheme(app, form, flex, headerText, clockText, rc)
 
+	versionView := tview.NewTextView().
+		SetText(version).
+		SetTextAlign(tview.AlignRight).
+		SetTextColor(tcell.ColorDarkGray)
+	if rc != nil {
+		if attr, ok := rc.Attributes["title_color"]; ok {
+			versionView.SetTextColor(MapColor(attr.Foreground))
+		}
+		if attr, ok := rc.Attributes["screen_color"]; ok {
+			versionView.SetBackgroundColor(MapColor(attr.Background))
+		}
+	}
+
+	rootFlex := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(flex, 0, 1, true).
+		AddItem(versionView, 1, 1, false)
+
 	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyEscape {
 			selectionError = fmt.Errorf("cancelled")
@@ -212,7 +229,7 @@ func ShowLogin(title string, theme string, authFunc func(string, string) error) 
 		}
 	}()
 
-	err = app.SetRoot(flex, true).Run()
+	err = app.SetRoot(rootFlex, true).Run()
 	signal.Stop(sigs)
 	close(sigs)
 
