@@ -64,10 +64,12 @@ func Run(args []string, exit func(int)) {
 	}
 
 	// Getty auto-detection for login mode consolidation
-	if !*loginMode {
-		ttyPath, err := osReadlink("/proc/self/fd/0")
-		if err == nil && isSecureTTYPath(ttyPath) && os.Getenv("DISPLAY") == "" {
-			*loginMode = true
+	if !*loginMode && os.Getenv("DISPLAY") == "" {
+		for _, fd := range []string{"0", "1", "2"} {
+			if ttyPath, err := osReadlink("/proc/self/fd/" + fd); err == nil && isSecureTTYPath(ttyPath) {
+				*loginMode = true
+				break
+			}
 		}
 	}
 
@@ -444,7 +446,7 @@ func validateTTY(dryRun bool) error {
 	if dryRun {
 		return nil
 	}
-	if !IsTerminal(int(os.Stdin.Fd())) || !IsTerminal(int(os.Stdout.Fd())) || !IsTerminal(int(os.Stderr.Fd())) {
+	if !IsTerminal(int(os.Stdin.Fd())) || !IsTerminal(int(os.Stdout.Fd())) {
 		return fmt.Errorf("gocdm must be launched from an interactive TTY")
 	}
 	return nil
