@@ -50,11 +50,10 @@ func (s *pamLoginSession) Env() []string {
 
 func (s *pamLoginSession) CloseSession() error {
 	err := s.tx.CloseSession(0)
-	err2 := s.tx.End()
-	if err != nil {
-		return err
+	if endErr := s.tx.End(); err == nil {
+		err = endErr
 	}
-	return err2
+	return err
 }
 
 func (a *pamAuthenticator) Authenticate(username, password string) (LoginSession, error) {

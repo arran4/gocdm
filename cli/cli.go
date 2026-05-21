@@ -240,14 +240,18 @@ func Run(args []string, exit func(int)) {
 	}
 
 	setupUserContext := func(baseEnv []string, stype, sname string) []string {
-		env := append([]string{}, baseEnv...)
+		envMap := config.EnvSliceToMap(baseEnv)
+
 		if *loginMode && loginSession != nil {
 			if err := loginSession.OpenSession(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: PAM open session failed: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Error: PAM open session failed: %v\n", err)
+				exit(1)
+				return nil
 			}
-			envMap := config.EnvSliceToMap(env)
 
-			// Set core environment from /etc/passwd unconditionally
+			// We already loaded the passwd entry into homeDir, but let's re-use the parsed fields
+			// Wait, we need the whole entry. We can just load it again, it's fast, or we can use the environment map directly.
+			// Actually, let's load it.
 			entry, err := config.LoadPasswdEntry(PasswdFilePath, username)
 			if err == nil {
 				envMap["USER"] = entry.Username
@@ -263,25 +267,21 @@ func Run(args []string, exit func(int)) {
 					envMap[k] = v
 				}
 			}
-			env = config.EnvMapToSlice(envMap)
-
-			if err := DropPrivilegesFn(username); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
-				exit(1)
-			}
 		}
 
 		if stype == "W" {
-			env = append(env, "XDG_SESSION_TYPE=wayland")
+			envMap["XDG_SESSION_TYPE"] = "wayland"
 		} else if stype == "X" {
-			env = append(env, "XDG_SESSION_TYPE=x11")
+			envMap["XDG_SESSION_TYPE"] = "x11"
 		} else if stype == "C" {
-			env = append(env, "XDG_SESSION_TYPE=tty")
+			envMap["XDG_SESSION_TYPE"] = "tty"
 		}
-		env = append(env, "XDG_SESSION_CLASS=user")
-		env = append(env, "XDG_SESSION_DESKTOP="+sname)
-		env = append(env, "DESKTOP_SESSION="+sname)
-		env = append(env, "XDG_CURRENT_DESKTOP="+sname)
+		envMap["XDG_SESSION_CLASS"] = "user"
+		envMap["XDG_SESSION_DESKTOP"] = sname
+		envMap["DESKTOP_SESSION"] = sname
+		envMap["XDG_CURRENT_DESKTOP"] = sname
+
+		env := config.EnvMapToSlice(envMap)
 
 		if err := config.SaveStateAt(homeDir, selectedSession.Name); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
@@ -339,15 +339,31 @@ func Run(args []string, exit func(int)) {
 		binary, err := ExecLookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
+			if loginSession != nil {
+				_ = loginSession.CloseSession()
+			}
 			exit(1)
 			return
 		}
 
 		env := setupUserContext(sessionEnv, "W", selectedSession.Name)
+		if env == nil { return }
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
+
+		if *loginMode {
+			if err := DropPrivilegesFn(username); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
+				if loginSession != nil {
+					_ = loginSession.CloseSession()
+				}
+				exit(1)
+				return
+			}
+		}
 
 		if err := ExecProgramFn(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
+			// At this point privileges are dropped, so CloseSession likely fails, but we try anyway
 			if loginSession != nil {
 				_ = loginSession.CloseSession()
 			}
@@ -373,12 +389,27 @@ func Run(args []string, exit func(int)) {
 		binary, err := ExecLookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
+			if loginSession != nil {
+				_ = loginSession.CloseSession()
+			}
 			exit(1)
 			return
 		}
 
 		env := setupUserContext(sessionEnv, "C", selectedSession.Name)
+		if env == nil { return }
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
+
+		if *loginMode {
+			if err := DropPrivilegesFn(username); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
+				if loginSession != nil {
+					_ = loginSession.CloseSession()
+				}
+				exit(1)
+				return
+			}
+		}
 
 		if err := ExecProgramFn(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
@@ -460,6 +491,19 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 		env := setupUserContext(sessionEnv, "X", selectedSession.Name)
+		if env == nil { return }
+
+		if *loginMode {
+			if err := DropPrivilegesFn(username); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
+				if loginSession != nil {
+					_ = loginSession.CloseSession()
+				}
+				exit(1)
+				return
+			}
+		}
+
 		err = LaunchXSessionFn(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
