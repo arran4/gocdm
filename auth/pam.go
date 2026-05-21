@@ -84,7 +84,10 @@ func (a *pamAuthenticator) Authenticate(username, password string) (LoginSession
 	}
 
 	if err := tx.Authenticate(0); err != nil {
-		_ = tx.End()
+		endErr := tx.End()
+		if endErr != nil {
+			err = fmt.Errorf("PAM auth error: %w, subsequent end error: %v", err, endErr)
+		}
 		if len(pamMsgs) > 0 {
 			return nil, fmt.Errorf("%w: %s", err, strings.Join(pamMsgs, "; "))
 		}
@@ -92,7 +95,10 @@ func (a *pamAuthenticator) Authenticate(username, password string) (LoginSession
 	}
 	pamMsgs = nil
 	if err := tx.AcctMgmt(0); err != nil {
-		_ = tx.End()
+		endErr := tx.End()
+		if endErr != nil {
+			err = fmt.Errorf("PAM acct mgmt error: %w, subsequent end error: %v", err, endErr)
+		}
 		if len(pamMsgs) > 0 {
 			return nil, fmt.Errorf("account management failed: %w: %s", err, strings.Join(pamMsgs, "; "))
 		}

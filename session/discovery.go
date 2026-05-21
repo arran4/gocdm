@@ -12,9 +12,10 @@ import (
 )
 
 var (
-	X11SessionsDir     = "/etc/X11/Sessions"
-	XSessionsDir       = "/usr/share/xsessions"
-	WaylandSessionsDir = "/usr/share/wayland-sessions"
+	X11SessionsDir           = "/etc/X11/Sessions"
+	XSessionsDir             = "/usr/share/xsessions"
+	WaylandSessionsDir       = "/usr/share/wayland-sessions"
+	PlasmaWaylandWrapperPath = "/usr/libexec/plasma-dbus-run-session-if-needed"
 )
 
 type Session struct {
@@ -266,7 +267,8 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 	execCmd = stripFreedesktopExecVariables(execCmd)
 
 	if strings.Contains(execCmd, "startplasma-wayland") {
-		wrapper := "/usr/libexec/plasma-dbus-run-session-if-needed"
+		// Use the SDDM plasma wrapper to ensure dbus and logind are correctly wired for KDE
+		wrapper := PlasmaWaylandWrapperPath
 		if _, err := d.ExecLookPath(wrapper); err == nil {
 			execCmd = wrapper + " " + execCmd
 		}

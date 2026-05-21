@@ -269,17 +269,24 @@ func Run(args []string, exit func(int)) {
 			}
 		}
 
-		if stype == "W" {
-			envMap["XDG_SESSION_TYPE"] = "wayland"
-		} else if stype == "X" {
-			envMap["XDG_SESSION_TYPE"] = "x11"
-		} else if stype == "C" {
-			envMap["XDG_SESSION_TYPE"] = "tty"
+		checkAndSet := func(key, val string) {
+			if existing, ok := envMap[key]; ok && existing != "" && existing != val {
+				fmt.Fprintf(os.Stderr, "Warning: overriding existing environment variable %s=%s with %s\n", key, existing, val)
+			}
+			envMap[key] = val
 		}
-		envMap["XDG_SESSION_CLASS"] = "user"
-		envMap["XDG_SESSION_DESKTOP"] = sname
-		envMap["DESKTOP_SESSION"] = sname
-		envMap["XDG_CURRENT_DESKTOP"] = sname
+
+		if stype == "W" {
+			checkAndSet("XDG_SESSION_TYPE", "wayland")
+		} else if stype == "X" {
+			checkAndSet("XDG_SESSION_TYPE", "x11")
+		} else if stype == "C" {
+			checkAndSet("XDG_SESSION_TYPE", "tty")
+		}
+		checkAndSet("XDG_SESSION_CLASS", "user")
+		checkAndSet("XDG_SESSION_DESKTOP", sname)
+		checkAndSet("DESKTOP_SESSION", sname)
+		checkAndSet("XDG_CURRENT_DESKTOP", sname)
 
 		env := config.EnvMapToSlice(envMap)
 
@@ -340,7 +347,9 @@ func Run(args []string, exit func(int)) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
 			if loginSession != nil {
-				_ = loginSession.CloseSession()
+				if closeErr := loginSession.CloseSession(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close PAM session: %v\n", closeErr)
+				}
 			}
 			exit(1)
 			return
@@ -365,7 +374,9 @@ func Run(args []string, exit func(int)) {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			// At this point privileges are dropped, so CloseSession likely fails, but we try anyway
 			if loginSession != nil {
-				_ = loginSession.CloseSession()
+				if closeErr := loginSession.CloseSession(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close PAM session: %v\n", closeErr)
+				}
 			}
 			exit(1)
 			return
@@ -390,7 +401,9 @@ func Run(args []string, exit func(int)) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
 			if loginSession != nil {
-				_ = loginSession.CloseSession()
+				if closeErr := loginSession.CloseSession(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close PAM session: %v\n", closeErr)
+				}
 			}
 			exit(1)
 			return
@@ -414,7 +427,9 @@ func Run(args []string, exit func(int)) {
 		if err := ExecProgramFn(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			if loginSession != nil {
-				_ = loginSession.CloseSession()
+				if closeErr := loginSession.CloseSession(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close PAM session: %v\n", closeErr)
+				}
 			}
 			exit(1)
 			return
@@ -508,7 +523,9 @@ func Run(args []string, exit func(int)) {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
 			if loginSession != nil {
-				_ = loginSession.CloseSession()
+				if closeErr := loginSession.CloseSession(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close PAM session: %v\n", closeErr)
+				}
 			}
 			exit(1)
 			return
