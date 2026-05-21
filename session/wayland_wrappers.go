@@ -6,6 +6,10 @@ import "strings"
 
 var PlasmaWaylandWrapperPath = "/usr/libexec/plasma-dbus-run-session-if-needed"
 
+func init() {
+	RegisterPostParseDesktopHook(ApplyWaylandWrappers)
+}
+
 // ApplyWaylandWrappers modifies the exec command to include necessary wrappers
 // (like the SDDM dbus/logind wrapper for KDE Plasma).
 func ApplyWaylandWrappers(execCmd string, d *Discoverer) string {

@@ -17,6 +17,13 @@ var (
 	WaylandSessionsDir = "/usr/share/wayland-sessions"
 )
 
+var postParseDesktopHooks []func(string, *Discoverer) string
+
+// RegisterPostParseDesktopHook allows external modules (like wayland wrappers) to register hooks to modify the exec command.
+func RegisterPostParseDesktopHook(hook func(string, *Discoverer) string) {
+	postParseDesktopHooks = append(postParseDesktopHooks, hook)
+}
+
 type Session struct {
 	Name string
 	Exec string
@@ -265,7 +272,9 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 
 	execCmd = stripFreedesktopExecVariables(execCmd)
 
-	execCmd = ApplyWaylandWrappers(execCmd, d)
+	for _, hook := range postParseDesktopHooks {
+		execCmd = hook(execCmd, d)
+	}
 
 	// Check TryExec if present
 	if tryExec != "" {
