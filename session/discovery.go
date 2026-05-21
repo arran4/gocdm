@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ var (
 	X11SessionsDir     = "/etc/X11/Sessions"
 	XSessionsDir       = "/usr/share/xsessions"
 	WaylandSessionsDir = "/usr/share/wayland-sessions"
+	ShellsFile         = "/etc/shells"
 )
 
 var postParseDesktopHooks []func(string, *Discoverer) string
@@ -33,6 +35,8 @@ type Session struct {
 
 type Discoverer struct {
 	ExecLookPath func(string) (string, error)
+	ShellsFile   string
+	OpenShells   func(string) (io.ReadCloser, error)
 }
 
 func NewDiscoverer() *Discoverer {
@@ -44,6 +48,10 @@ func NewDiscoverer() *Discoverer {
 	cache := make(map[string]result)
 
 	return &Discoverer{
+		ShellsFile: ShellsFile,
+		OpenShells: func(path string) (io.ReadCloser, error) {
+			return os.Open(path)
+		},
 		ExecLookPath: func(file string) (string, error) {
 			mu.Lock()
 			res, ok := cache[file]
@@ -124,6 +132,14 @@ func (d *Discoverer) Discover(userHome string) ([]Session, error) {
 	wSessions, err := d.discoverWaylandSessions()
 	if err == nil {
 		for _, s := range wSessions {
+			addSession(s)
+		}
+	}
+
+	// Try shell sessions from ShellsFile
+	shellSessions, err := d.discoverShellSessions()
+	if err == nil {
+		for _, s := range shellSessions {
 			addSession(s)
 		}
 	}
@@ -219,6 +235,46 @@ func (d *Discoverer) discoverXSessions() ([]Session, error) {
 
 func (d *Discoverer) discoverWaylandSessions() ([]Session, error) {
 	return d.discoverCustomSessions(WaylandSessionsDir, "W")
+}
+
+func (d *Discoverer) discoverShellSessions() ([]Session, error) {
+	file, err := d.OpenShells(d.ShellsFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var sessions []Session
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Use only the first field to ignore trailing comments/whitespace
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		shellPath := fields[0]
+
+		// Attempt to resolve the shell binary
+		if _, err := d.ExecLookPath(shellPath); err != nil {
+			continue // Skip invalid shells
+		}
+
+		name := filepath.Base(shellPath)
+
+		sessions = append(sessions, Session{
+			Name: name,
+			Exec: shellPath,
+			Type: "C",
+			Path: d.ShellsFile,
+		})
+	}
+
+	return sessions, scanner.Err()
 }
 
 // stripFreedesktopExecVariables removes Freedesktop Exec field codes from the command line.

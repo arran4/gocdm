@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"github.com/arran4/gocdm/auth"
+	"github.com/arran4/gocdm/session"
 	"github.com/arran4/gocdm/x11"
 	"io"
 	"os"
@@ -109,6 +110,17 @@ func TestRunDryRunNoSessions(t *testing.T) {
 			t.Errorf("cleanup failed: %v", err)
 		}
 	})
+
+	origDiscoverSessionsFn := DiscoverSessionsFn
+	DiscoverSessionsFn = func(userHome string) ([]session.Session, error) {
+		d := session.NewDiscoverer()
+		d.ShellsFile = os.DevNull // Empty file so it finds no shell sessions
+		return d.Discover(userHome)
+	}
+	t.Cleanup(func() {
+		DiscoverSessionsFn = origDiscoverSessionsFn
+	})
+
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("XDG_CONFIG_HOME", tmpHome)
 	exited := false
@@ -354,6 +366,7 @@ func TestRunWaylandSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() {
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
@@ -399,7 +412,16 @@ func TestRunConsoleSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	origDiscoverSessionsFn := DiscoverSessionsFn
+	DiscoverSessionsFn = func(userHome string) ([]session.Session, error) {
+		d := session.NewDiscoverer()
+		d.ShellsFile = os.DevNull // Empty file so it finds no shell sessions
+		return d.Discover(userHome)
+	}
+
 	t.Cleanup(func() {
+		DiscoverSessionsFn = origDiscoverSessionsFn
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
 		}
@@ -430,7 +452,16 @@ func TestRunXSessionDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	origDiscoverSessionsFn := DiscoverSessionsFn
+	DiscoverSessionsFn = func(userHome string) ([]session.Session, error) {
+		d := session.NewDiscoverer()
+		d.ShellsFile = os.DevNull // Empty file so it finds no shell sessions
+		return d.Discover(userHome)
+	}
+
 	t.Cleanup(func() {
+		DiscoverSessionsFn = origDiscoverSessionsFn
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
 		}
@@ -460,7 +491,16 @@ func TestRunConsoleEmptyCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	origDiscoverSessionsFn := DiscoverSessionsFn
+	DiscoverSessionsFn = func(userHome string) ([]session.Session, error) {
+		d := session.NewDiscoverer()
+		d.ShellsFile = os.DevNull // Empty file so it finds no shell sessions
+		return d.Discover(userHome)
+	}
+
 	t.Cleanup(func() {
+		DiscoverSessionsFn = origDiscoverSessionsFn
 		if err := os.RemoveAll(tmpDir); err != nil {
 			t.Errorf("cleanup failed: %v", err)
 		}

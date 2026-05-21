@@ -2,8 +2,10 @@ package session
 
 import (
 	_ "embed"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,6 +74,9 @@ func TestDiscoverSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	shellsContent := "# /etc/shells: valid login shells\n" +
+		testCommand + "\n"
+
 	// Save original vars
 	origX11 := X11SessionsDir
 	origXSessions := XSessionsDir
@@ -87,7 +92,11 @@ func TestDiscoverSessions(t *testing.T) {
 	WaylandSessionsDir = waylandSessionsDir
 
 	// Test Discovery
-	sessions, err := DiscoverSessions(userHome)
+	d := NewDiscoverer()
+	d.OpenShells = func(path string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(shellsContent)), nil
+	}
+	sessions, err := d.Discover(userHome)
 	if err != nil {
 		t.Fatalf("DiscoverSessions failed: %v", err)
 	}
@@ -98,8 +107,9 @@ func TestDiscoverSessions(t *testing.T) {
 	// 3. legacy_x11 (Type X)
 	// 4. Standard X Session (Type X)
 	// 5. Wayland Session (Type W)
+	// 6. test-executable (Type C) (from shells file)
 
-	expectedCount := 5
+	expectedCount := 6
 	if len(sessions) != expectedCount {
 		t.Errorf("Expected %d sessions, got %d", expectedCount, len(sessions))
 		for _, s := range sessions {
@@ -119,6 +129,7 @@ func TestDiscoverSessions(t *testing.T) {
 		"legacy_x11":                  "X",
 		"Standard X Session":          "X",
 		"Wayland Session":             "W",
+		filepath.Base(testCommand):    "C",
 	}
 
 	for name, typ := range expectations {
@@ -127,6 +138,47 @@ func TestDiscoverSessions(t *testing.T) {
 		} else if gotType != typ {
 			t.Errorf("Expected session '%s' to have type '%s', got '%s'", name, typ, gotType)
 		}
+	}
+}
+
+func TestDiscoverShellSessions(t *testing.T) {
+	testCommand := "test-session-cmd"
+
+	shellsContent := "# /etc/shells: valid login shells\n" +
+		"/bin/false\n" + // Assuming it's missing or we mock it via missing exec
+		testCommand + "\n" +
+		"   \n" // empty line
+
+	d := NewDiscoverer()
+	d.OpenShells = func(path string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(shellsContent)), nil
+	}
+	// Mock ExecLookPath to only return testCommand successfully
+	d.ExecLookPath = func(file string) (string, error) {
+		if file == testCommand {
+			return testCommand, nil
+		}
+		return "", os.ErrNotExist
+	}
+
+	sessions, err := d.discoverShellSessions()
+	if err != nil {
+		t.Fatalf("discoverShellSessions failed: %v", err)
+	}
+
+	if len(sessions) != 1 {
+		t.Fatalf("Expected 1 session, got %d", len(sessions))
+	}
+
+	s := sessions[0]
+	if s.Type != "C" {
+		t.Errorf("Expected Type C, got %s", s.Type)
+	}
+	if s.Name != filepath.Base(testCommand) {
+		t.Errorf("Expected Name %s, got %s", filepath.Base(testCommand), s.Name)
+	}
+	if s.Exec != testCommand {
+		t.Errorf("Expected Exec %s, got %s", testCommand, s.Exec)
 	}
 }
 
