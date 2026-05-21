@@ -142,12 +142,7 @@ func TestDiscoverSessions(t *testing.T) {
 }
 
 func TestDiscoverShellSessions(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "cdm-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-	testCommand := setupPathExecutable(t, tmpDir)
+	testCommand := "test-session-cmd"
 
 	shellsContent := "# /etc/shells: valid login shells\n" +
 		"/bin/false\n" + // Assuming it's missing or we mock it via missing exec
