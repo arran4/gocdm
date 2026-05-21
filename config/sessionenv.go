@@ -13,10 +13,10 @@ var envVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // BuildSessionEnv enriches baseEnv with user identity from passwdFile and optional
 // overrides from pamEnvFile.
 func BuildSessionEnv(baseEnv []string, username, passwdFile, pamEnvFile string) ([]string, error) {
-	envMap := envSliceToMap(baseEnv)
+	envMap := EnvSliceToMap(baseEnv)
 
 	if username != "" {
-		entry, err := loadPasswdEntry(passwdFile, username)
+		entry, err := LoadPasswdEntry(passwdFile, username)
 		if err != nil {
 			return nil, err
 		}
@@ -32,16 +32,16 @@ func BuildSessionEnv(baseEnv []string, username, passwdFile, pamEnvFile string) 
 		}
 	}
 
-	return envMapToSlice(envMap), nil
+	return EnvMapToSlice(envMap), nil
 }
 
-type passwdEntry struct {
+type PasswdEntry struct {
 	Username string
 	HomeDir  string
 	Shell    string
 }
 
-func loadPasswdEntry(path, username string) (*passwdEntry, error) {
+func LoadPasswdEntry(path, username string) (*PasswdEntry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open passwd file: %w", err)
@@ -68,12 +68,12 @@ func loadPasswdEntry(path, username string) (*passwdEntry, error) {
 	return nil, fmt.Errorf("user %q not found in passwd file", username)
 }
 
-func parsePasswdLine(line string) *passwdEntry {
+func parsePasswdLine(line string) *PasswdEntry {
 	parts := strings.Split(line, ":")
 	if len(parts) < 7 {
 		return nil
 	}
-	return &passwdEntry{Username: parts[0], HomeDir: parts[5], Shell: parts[6]}
+	return &PasswdEntry{Username: parts[0], HomeDir: parts[5], Shell: parts[6]}
 }
 
 func applyPamEnvFile(envMap map[string]string, path string) error {
@@ -144,7 +144,7 @@ func unquote(v string) string {
 	return v
 }
 
-func envSliceToMap(env []string) map[string]string {
+func EnvSliceToMap(env []string) map[string]string {
 	m := make(map[string]string, len(env))
 	for _, kv := range env {
 		parts := strings.SplitN(kv, "=", 2)
@@ -156,7 +156,7 @@ func envSliceToMap(env []string) map[string]string {
 	return m
 }
 
-func envMapToSlice(envMap map[string]string) []string {
+func EnvMapToSlice(envMap map[string]string) []string {
 	out := make([]string, 0, len(envMap))
 	for key, val := range envMap {
 		out = append(out, key+"="+val)

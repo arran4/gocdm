@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -34,10 +35,9 @@ func LoadState() (*State, error) {
 	return &state, nil
 }
 
-func SaveState(lastSession string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
+func SaveStateAt(home, lastSession string) error {
+	if home == "" {
+		return fmt.Errorf("home directory not provided")
 	}
 
 	configDir := filepath.Join(home, ".config", "gocdm")
