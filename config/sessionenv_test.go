@@ -29,7 +29,7 @@ func TestBuildSessionEnv(t *testing.T) {
 		t.Fatalf("BuildSessionEnv failed: %v", err)
 	}
 
-	envMap := envSliceToMap(env)
+	envMap := EnvSliceToMap(env)
 	if got := envMap["USER"]; got != "demo" {
 		t.Fatalf("USER mismatch: got %q", got)
 	}
@@ -72,12 +72,12 @@ func TestParsePasswdLine(t *testing.T) {
 	tests := []struct {
 		name     string
 		line     string
-		expected *passwdEntry
+		expected *PasswdEntry
 	}{
 		{
 			name: "Valid entry",
 			line: "demo:x:1000:1000:Demo:/home/demo:/bin/bash",
-			expected: &passwdEntry{
+			expected: &PasswdEntry{
 				Username: "demo",
 				HomeDir:  "/home/demo",
 				Shell:    "/bin/bash",
@@ -91,7 +91,7 @@ func TestParsePasswdLine(t *testing.T) {
 		{
 			name: "Empty shell",
 			line: "nobody:x:65534:65534:nobody:/nonexistent:",
-			expected: &passwdEntry{
+			expected: &PasswdEntry{
 				Username: "nobody",
 				HomeDir:  "/nonexistent",
 				Shell:    "",
@@ -141,13 +141,13 @@ demouser2:x:1001:1001:Demo User 2:/home/demouser2:/bin/bash
 		name      string
 		username  string
 		expectErr bool
-		expected  *passwdEntry
+		expected  *PasswdEntry
 	}{
 		{
 			name:      "Valid user",
 			username:  "demouser",
 			expectErr: false,
-			expected: &passwdEntry{
+			expected: &PasswdEntry{
 				Username: "demouser",
 				HomeDir:  "/home/demouser",
 				Shell:    "/bin/zsh",
@@ -157,7 +157,7 @@ demouser2:x:1001:1001:Demo User 2:/home/demouser2:/bin/bash
 			name:      "Valid user 2",
 			username:  "demouser2",
 			expectErr: false,
-			expected: &passwdEntry{
+			expected: &PasswdEntry{
 				Username: "demouser2",
 				HomeDir:  "/home/demouser2",
 				Shell:    "/bin/bash",
@@ -177,7 +177,7 @@ demouser2:x:1001:1001:Demo User 2:/home/demouser2:/bin/bash
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := loadPasswdEntry(passwdPath, tt.username)
+			got, err := LoadPasswdEntry(passwdPath, tt.username)
 			if (err != nil) != tt.expectErr {
 				t.Errorf("expected error: %v, got: %v", tt.expectErr, err)
 			}

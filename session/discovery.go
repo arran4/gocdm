@@ -265,6 +265,13 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 
 	execCmd = stripFreedesktopExecVariables(execCmd)
 
+	if strings.Contains(execCmd, "startplasma-wayland") {
+		wrapper := "/usr/libexec/plasma-dbus-run-session-if-needed"
+		if _, err := d.ExecLookPath(wrapper); err == nil {
+			execCmd = wrapper + " " + execCmd
+		}
+	}
+
 	// Check TryExec if present
 	if tryExec != "" {
 		if _, err := d.ExecLookPath(tryExec); err != nil {

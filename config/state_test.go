@@ -28,7 +28,7 @@ func TestStateLoadSave(t *testing.T) {
 	}
 
 	// Test save
-	if err := SaveState("my-session"); err != nil {
+	if err := SaveStateAt(tmpHome, "my-session"); err != nil {
 		t.Fatalf("SaveState failed: %v", err)
 	}
 

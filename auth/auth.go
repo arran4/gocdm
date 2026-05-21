@@ -11,8 +11,14 @@ import (
 )
 
 // Authenticator validates user credentials.
+type LoginSession interface {
+	OpenSession() error
+	Env() []string
+	CloseSession() error
+}
+
 type Authenticator interface {
-	Authenticate(username, password string) error
+	Authenticate(username, password string) (LoginSession, error)
 }
 
 var readPassword = func(fd int) ([]byte, error) {

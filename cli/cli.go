@@ -47,6 +47,7 @@ func Run(args []string, exit func(int)) {
 	loginMode := fs.Bool("login", false, "Prompt for username/password and authenticate with PAM")
 	tuiLogin := fs.Bool("tui-login", true, "Use TUI for login prompt (when -login is enabled)")
 	pamService := fs.String("pam-service", "login", "PAM service name used with -login")
+	debugEnv := fs.Bool("debug-env", false, "Print session environment before exec (redacts sensitive values)")
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
@@ -142,6 +143,7 @@ func Run(args []string, exit func(int)) {
 	}
 
 	username := currentUsername()
+	var loginSession auth.LoginSession
 	if *loginMode && !SupportsLoginModeFn() {
 		fmt.Fprintf(os.Stderr, "-login is not supported on %s (support tier: %s)\n", runtime.GOOS, PlatformSupportTierFn())
 		exit(1)
@@ -152,10 +154,17 @@ func Run(args []string, exit func(int)) {
 		var promptedUser, password string
 		var err error
 
+		authWrapper := func(user, pass string) error {
+			ls, authErr := authenticator.Authenticate(user, pass)
+			if authErr == nil {
+				loginSession = ls
+			}
+			return authErr
+		}
+
 		if *tuiLogin {
 			var tuiErr error
-			promptedUser, password, tuiErr = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC, Version, authenticator.Authenticate)
-			// We don't actually use 'password' from TUI after successful auth since TUI doesn't need to return it securely anymore, but let's just assign it to avoid ineffassign.
+			promptedUser, password, tuiErr = TuiPromptCredentials("Console Display Manager - Login", cfg.DialogRC, Version, authWrapper)
 			_ = password
 			if tuiErr != nil {
 				fmt.Fprintf(os.Stderr, "Authentication prompt failed or cancelled: %v\n", tuiErr)
@@ -170,7 +179,7 @@ func Run(args []string, exit func(int)) {
 					exit(1)
 					return
 				}
-				if err := authenticator.Authenticate(promptedUser, password); err == nil {
+				if err := authWrapper(promptedUser, password); err == nil {
 					break
 				} else {
 					fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
@@ -219,9 +228,85 @@ func Run(args []string, exit func(int)) {
 		sessionEnv = os.Environ()
 	}
 
-	// Save state
-	if err := config.SaveState(selectedSession.Name); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
+	var homeDir string
+	if *loginMode {
+		entry, err := config.LoadPasswdEntry(PasswdFilePath, username)
+		if err == nil {
+			homeDir = entry.HomeDir
+		}
+	}
+	if homeDir == "" {
+		homeDir, _ = os.UserHomeDir()
+	}
+
+	setupUserContext := func(baseEnv []string, stype, sname string) []string {
+		env := append([]string{}, baseEnv...)
+		if *loginMode && loginSession != nil {
+			if err := loginSession.OpenSession(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: PAM open session failed: %v\n", err)
+			}
+			envMap := config.EnvSliceToMap(env)
+
+			// Set core environment from /etc/passwd unconditionally
+			entry, err := config.LoadPasswdEntry(PasswdFilePath, username)
+			if err == nil {
+				envMap["USER"] = entry.Username
+				envMap["LOGNAME"] = entry.Username
+				envMap["HOME"] = entry.HomeDir
+				envMap["SHELL"] = entry.Shell
+			}
+
+			pamEnv := loginSession.Env()
+			if len(pamEnv) > 0 {
+				pamEnvMap := config.EnvSliceToMap(pamEnv)
+				for k, v := range pamEnvMap {
+					envMap[k] = v
+				}
+			}
+			env = config.EnvMapToSlice(envMap)
+
+			if err := DropPrivilegesFn(username); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
+				exit(1)
+			}
+		}
+
+		if stype == "W" {
+			env = append(env, "XDG_SESSION_TYPE=wayland")
+		} else if stype == "X" {
+			env = append(env, "XDG_SESSION_TYPE=x11")
+		} else if stype == "C" {
+			env = append(env, "XDG_SESSION_TYPE=tty")
+		}
+		env = append(env, "XDG_SESSION_CLASS=user")
+		env = append(env, "XDG_SESSION_DESKTOP="+sname)
+		env = append(env, "DESKTOP_SESSION="+sname)
+		env = append(env, "XDG_CURRENT_DESKTOP="+sname)
+
+		if err := config.SaveStateAt(homeDir, selectedSession.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
+		}
+
+		if *debugEnv {
+			fmt.Println("--- DEBUG ENV ---")
+			for _, e := range env {
+				if strings.HasPrefix(e, "DBUS_SESSION_BUS_ADDRESS=") ||
+				   strings.HasPrefix(e, "HOME=") ||
+				   strings.HasPrefix(e, "USER=") ||
+				   strings.HasPrefix(e, "LOGNAME=") ||
+				   strings.HasPrefix(e, "SHELL=") ||
+				   strings.HasPrefix(e, "XDG_RUNTIME_DIR=") ||
+				   strings.HasPrefix(e, "XDG_SESSION_TYPE=") ||
+				   strings.HasPrefix(e, "DESKTOP_SESSION=") {
+					fmt.Println(e)
+				} else if strings.Contains(e, "=") {
+					parts := strings.SplitN(e, "=", 2)
+					fmt.Printf("%s=[REDACTED]\n", parts[0])
+				}
+			}
+			fmt.Println("-----------------")
+		}
+		return env
 	}
 
 	// Normalize flag
@@ -251,14 +336,6 @@ func Run(args []string, exit func(int)) {
 			fmt.Printf("Dry run: would execute Wayland program: %s %v\n", bin, args)
 			return
 		}
-		if *loginMode {
-			if err := DropPrivilegesFn(username); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
-				exit(1)
-				return
-			}
-		}
-
 		binary, err := ExecLookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
@@ -266,12 +343,14 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 
-		env := append([]string{}, sessionEnv...)
+		env := setupUserContext(sessionEnv, "W", selectedSession.Name)
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
-		env = append(env, "XDG_SESSION_TYPE=wayland")
 
 		if err := ExecProgramFn(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
+			if loginSession != nil {
+				_ = loginSession.CloseSession()
+			}
 			exit(1)
 			return
 		}
@@ -291,14 +370,6 @@ func Run(args []string, exit func(int)) {
 			fmt.Printf("Dry run: would execute console program: %s %v\n", bin, args)
 			return
 		}
-		if *loginMode {
-			if err := DropPrivilegesFn(username); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
-				exit(1)
-				return
-			}
-		}
-
 		binary, err := ExecLookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
@@ -306,11 +377,14 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 
-		env := append([]string{}, sessionEnv...)
+		env := setupUserContext(sessionEnv, "C", selectedSession.Name)
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
 		if err := ExecProgramFn(binary, append([]string{bin}, args...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
+			if loginSession != nil {
+				_ = loginSession.CloseSession()
+			}
 			exit(1)
 			return
 		}
@@ -385,17 +459,13 @@ func Run(args []string, exit func(int)) {
 			fmt.Printf("X server args: %v\n", cfg.ServerArgs)
 			return
 		}
-		if *loginMode {
-			if err := DropPrivilegesFn(username); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
-				exit(1)
-				return
-			}
-		}
-
-		err = LaunchXSessionFn(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, sessionEnv)
+		env := setupUserContext(sessionEnv, "X", selectedSession.Name)
+		err = LaunchXSessionFn(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
+			if loginSession != nil {
+				_ = loginSession.CloseSession()
+			}
 			exit(1)
 			return
 		}

@@ -28,7 +28,36 @@ func getTTY() string {
 	return ""
 }
 
-func (a *pamAuthenticator) Authenticate(username, password string) error {
+type pamLoginSession struct {
+	tx *pam.Transaction
+}
+
+func (s *pamLoginSession) OpenSession() error {
+	return s.tx.OpenSession(0)
+}
+
+func (s *pamLoginSession) Env() []string {
+	envMap, err := s.tx.GetEnvList()
+	if err != nil {
+		return nil
+	}
+	var env []string
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	return env
+}
+
+func (s *pamLoginSession) CloseSession() error {
+	err := s.tx.CloseSession(0)
+	err2 := s.tx.End()
+	if err != nil {
+		return err
+	}
+	return err2
+}
+
+func (a *pamAuthenticator) Authenticate(username, password string) (LoginSession, error) {
 	var pamMsgs []string
 
 	tx, err := pam.StartFunc(a.Service, username, func(style pam.Style, msg string) (string, error) {
@@ -47,26 +76,28 @@ func (a *pamAuthenticator) Authenticate(username, password string) error {
 		}
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer func() { _ = tx.End() }()
+	// tx will be closed by LoginSession.CloseSession() on success
 
 	if tty := getTTY(); tty != "" {
 		_ = tx.SetItem(pam.Tty, tty)
 	}
 
 	if err := tx.Authenticate(0); err != nil {
+		_ = tx.End()
 		if len(pamMsgs) > 0 {
-			return fmt.Errorf("%w: %s", err, strings.Join(pamMsgs, "; "))
+			return nil, fmt.Errorf("%w: %s", err, strings.Join(pamMsgs, "; "))
 		}
-		return err
+		return nil, err
 	}
 	pamMsgs = nil
 	if err := tx.AcctMgmt(0); err != nil {
+		_ = tx.End()
 		if len(pamMsgs) > 0 {
-			return fmt.Errorf("account management failed: %w: %s", err, strings.Join(pamMsgs, "; "))
+			return nil, fmt.Errorf("account management failed: %w: %s", err, strings.Join(pamMsgs, "; "))
 		}
-		return err
+		return nil, err
 	}
-	return nil
+	return &pamLoginSession{tx: tx}, nil
 }

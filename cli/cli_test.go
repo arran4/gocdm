@@ -11,12 +11,21 @@ import (
 	"testing"
 )
 
+type mockLoginSession struct{}
+
+func (m mockLoginSession) OpenSession() error { return nil }
+func (m mockLoginSession) Env() []string { return nil }
+func (m mockLoginSession) CloseSession() error { return nil }
+
 type mockAuthenticator struct {
 	err error
 }
 
-func (m mockAuthenticator) Authenticate(username, password string) error {
-	return m.err
+func (m mockAuthenticator) Authenticate(username, password string) (auth.LoginSession, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return mockLoginSession{}, nil
 }
 func TestRunHelp(t *testing.T) {
 	exited := false
@@ -273,7 +282,8 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	NewAuthenticator = func(service string) auth.Authenticator { return mockAuthenticator{} }
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "secret", nil }
 	TuiPromptCredentials = func(title, theme, version string, authFunc func(string, string) error) (string, string, error) {
-		return "demo", "secret", nil
+		err := authFunc("demo", "secret")
+		return "demo", "secret", err
 	}
 	IsTerminal = func(fd int) bool { return true }
 	ExecLookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
