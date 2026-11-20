@@ -18,6 +18,22 @@ To autostart gocdm when you log in your account, copy the content of
 /usr/share/doc/gocdm/profile.sh to the tail of your shell profile (~/.profile,
 etc.).
 
+## Operating modes
+
+GoCDM supports two distinct operating modes:
+
+1. **Direct getty replacement (`-login` or `-mode=login` / `-mode=getty`)**: GoCDM runs as a root-owned login manager directly on a virtual terminal, authenticates credentials once via PAM, and drops privileges to the authenticated user before launching the chosen session.
+2. **Post-login user autostart (`-mode=user` / `-mode=autostart` or `-login=false`)**: An already-authenticated user launches GoCDM after a normal shell login (for example from `~/.profile` or `profile.sh`). GoCDM displays the session menu and launches the chosen session without prompting for PAM authentication again.
+
+### Mode selection and auto-detection (`-mode`)
+
+* `-mode=auto` (default): Selects direct getty login mode only when GoCDM is running with real and effective UID `0`, both stdin and stdout are attached to the same `/dev/ttyN` character device, Linux audit `loginuid` is unset (when available), and no active session markers are set (`DISPLAY`, `WAYLAND_DISPLAY`, `SSH_TTY`, `SSH_CONNECTION`, `SSH_CLIENT`, `XDG_SESSION_ID`, `GOCDM_SPAWN`, `SHLVL`, `USER`, `LOGNAME`, `SUDO_USER`, `DOAS_USER`). Otherwise it defaults to already-authenticated user session mode.
+* `-mode=login` (or `-mode=getty`, `-login`): Forces direct getty login mode. Requires `euid == 0` (unless `-dry-run` is specified) and refuses to run inside an existing graphical (`DISPLAY`/`WAYLAND_DISPLAY`) or SSH session.
+* `-mode=user` (or `-mode=autostart`, `-login=false`): Forces already-authenticated user session mode with no PAM authentication prompt.
+* Combining conflicting explicit flags such as `-login -mode=user` or `-login=false -mode=login` fails with exit status `2`.
+
+> **Migration note (from v0.0.26):** Earlier releases inferred `-login` whenever `DISPLAY` was unset and a `/dev/ttyN` descriptor was open, which could mistakenly prompt already-authenticated users for PAM credentials again during `~/.profile` autostart on `tty1`. In `-mode=auto`, post-`login(1)` shells on `tty1` now stay in user session mode. Passing `-login` explicitly in `getty@tty1.service` and `-mode=user` (or bare `gocdm`) in profile autostart is recommended.
+
 ## Using GoCDM as a getty replacement (Login Manager)
 
 GoCDM can run in login-manager mode with native username/password prompts and PAM authentication.
@@ -46,7 +62,7 @@ If you want GoCDM to start after a normal shell login, append this to `~/.profil
 
 ```sh
 if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
-  exec /usr/local/bin/gocdm
+  exec /usr/local/bin/gocdm -mode=user
 fi
 ```
 
