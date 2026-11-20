@@ -54,7 +54,7 @@ go build -tags nopam -o gocdm-nopam ./cmd/gocdm
 sudo install -m 0755 gocdm-nopam /usr/local/bin/gocdm
 ```
 
-In login mode, GoCDM authenticates credentials through PAM, prepares a sanitized session environment (`HOME`, `SHELL`, `USER`, `LOGNAME`, plus `/etc/security/pam_env.conf`), and drops privileges to the authenticated account before launching the selected session.
+In login mode, GoCDM authenticates credentials through PAM, resolves the canonical account via NSS/`/etc/passwd` before loading user configuration/sessions/state, constructs a minimal sanitized session environment (`USER`, `LOGNAME`, `HOME`, `SHELL`, safe `PATH`, allowlisted `TERM`/locale, `/etc/security/pam_env.conf`, and authoritative PAM-supplied environment such as `pam_systemd` `XDG_RUNTIME_DIR` without fabricating missing runtime/D-Bus values), drops privileges to the authenticated account, changes the working directory to the user's home (or `/` with a warning if unavailable), and writes `~/.config/gocdm/state.json` safely as the authenticated user before launching the selected session.
 
 ### RC/profile autostart setup (user session)
 
@@ -137,8 +137,9 @@ Always release returned strings with `GoCDMFreeCString`.
 #### Threat model summary (`-login`)
 
 * Credentials are read only at interactive prompt time and sent directly to PAM for validation.
-* On successful authentication, GoCDM derives a session environment from user identity (`/etc/passwd`) and `/etc/security/pam_env.conf` values.
-* Privilege transitions are explicit: `-login` uses PAM auth first, then drops privileges to the authenticated account before launching session executables.
+* Pre-login configuration only reads explicit `-config`/`RCFILE` or `/etc/cdmrc` (never the launching root user's `~/.cdmrc`). User config, session discovery, and last-session state are resolved only after authentication against the authenticated account.
+* On successful authentication, GoCDM constructs the session environment from a minimal allowlisted base (`TERM` and locale/TZ variables) rather than inheriting the privileged launcher environment wholesale, then applies canonical identity (`USER`, `LOGNAME`, `HOME`, `SHELL`), safe `PATH`, `/etc/security/pam_env.conf`, and authoritative PAM session variables (such as `pam_systemd` values) without fabricating `XDG_RUNTIME_DIR` or `DBUS_SESSION_BUS_ADDRESS`.
+* Privilege transitions are explicit: `-login` opens the PAM session, builds the environment, drops privileges (`setgroups`, `setgid`, `setuid` with verification), switches the working directory to the user's home (falling back to `/` with a warning if unavailable), and saves `~/.config/gocdm/state.json` safely without following symlinks or creating root-owned user files.
 * `-login` should be run from a real TTY (the binary rejects non-interactive launch unless `-dry-run` is used).
 
 #### PAM requirements
@@ -162,7 +163,8 @@ If PAM support is missing at build time, authentication fails with a clear error
 * Authentication prompt failure (stdin/stdout not usable): exits with error `Authentication prompt failed: ...`.
 * PAM authentication failure (wrong password/policy denial/service failure): exits with error `Authentication failed: ...`.
 * Non-interactive launch without `-dry-run`: exits with `gocdm must be launched from an interactive TTY`.
-* If secure session environment assembly fails, GoCDM prints a warning and falls back to inherited environment.
+* If secure session environment assembly fails in `-login` mode, GoCDM closes the PAM session and exits with `Error: failed to build secure session environment: ...` instead of falling back to the privileged launcher environment.
+* If the authenticated user's home directory is missing or inaccessible, GoCDM warns and falls back to `/` as the working directory. State persistence under `~/.config/gocdm/state.json` refuses symlinks and reports legacy root-owned state files diagnostically without calling `chown`.
 
 ## Platform support matrix
 

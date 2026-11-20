@@ -513,6 +513,8 @@ func TestRunGettyAutoDetectAuthenticatesOnce(t *testing.T) {
 	origLookPath := ExecLookPath
 	origDrop := DropPrivilegesFn
 	origExec := ExecProgramFn
+	origChdir := ChdirFn
+	origSaveState := SaveStateFn
 	t.Cleanup(func() {
 		osReadlink = origReadlink
 		osStat = origStat
@@ -525,7 +527,11 @@ func TestRunGettyAutoDetectAuthenticatesOnce(t *testing.T) {
 		ExecLookPath = origLookPath
 		DropPrivilegesFn = origDrop
 		ExecProgramFn = origExec
+		ChdirFn = origChdir
+		SaveStateFn = origSaveState
 	})
+	ChdirFn = func(dir string) error { return nil }
+	SaveStateFn = func(home, lastSession string, expectedUID int) error { return nil }
 
 	for _, k := range []string{
 		"DISPLAY", "WAYLAND_DISPLAY", "SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT",

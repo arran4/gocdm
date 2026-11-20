@@ -295,6 +295,8 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	origExecLookPath := ExecLookPath
 	origDropPrivilegesFn := DropPrivilegesFn
 	origExecProgramFn := ExecProgramFn
+	origChdirFn := ChdirFn
+	origSaveStateFn := SaveStateFn
 	defer func() {
 		NewAuthenticator = origNewAuthenticator
 		PromptCredentials = origPromptCredentials
@@ -303,7 +305,11 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 		ExecLookPath = origExecLookPath
 		DropPrivilegesFn = origDropPrivilegesFn
 		ExecProgramFn = origExecProgramFn
+		ChdirFn = origChdirFn
+		SaveStateFn = origSaveStateFn
 	}()
+	ChdirFn = func(dir string) error { return nil }
+	SaveStateFn = func(home, lastSession string, expectedUID int) error { return nil }
 	NewAuthenticator = func(service string) auth.Authenticator { return mockAuthenticator{} }
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "secret", nil }
 	TuiPromptCredentials = func(title, theme, version string, authFunc func(string, string) error) (string, string, error) {

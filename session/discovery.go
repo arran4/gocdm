@@ -17,6 +17,7 @@ var (
 	XSessionsDir       = "/usr/share/xsessions"
 	WaylandSessionsDir = "/usr/share/wayland-sessions"
 	ShellsFile         = "/etc/shells"
+	discoveryGeteuid   = os.Geteuid
 )
 
 var postParseDesktopHooks []func(string, *Discoverer) string
@@ -87,27 +88,35 @@ func (d *Discoverer) Discover(userHome string) ([]Session, error) {
 	}
 
 	// 1. User specific sessions (Highest priority)
-	// ~/.xsession, ~/.xinitrc
-	userSessions, err := d.discoverUserSessions(userHome)
-	if err == nil {
-		for _, s := range userSessions {
-			addSession(s)
-		}
-	}
+	if userHome != "" {
+		rejectSymlinks := discoveryGeteuid() == 0
 
-	// ~/.local/share/xsessions
-	localXSessions, err := d.discoverCustomSessions(filepath.Join(userHome, ".local", "share", "xsessions"), "X")
-	if err == nil {
-		for _, s := range localXSessions {
-			addSession(s)
+		// ~/.xsession, ~/.xinitrc
+		userSessions, err := d.discoverUserSessions(userHome, rejectSymlinks)
+		if err == nil {
+			for _, s := range userSessions {
+				addSession(s)
+			}
 		}
-	}
 
-	// ~/.config/wayland-sessions
-	localWaylandSessions, err := d.discoverCustomSessions(filepath.Join(userHome, ".config", "wayland-sessions"), "W")
-	if err == nil {
-		for _, s := range localWaylandSessions {
-			addSession(s)
+		// ~/.local/share/xsessions
+		if !rejectSymlinks || !hasSymlinkComponent(userHome, ".local", "share", "xsessions") {
+			localXSessions, err := d.discoverCustomSessionsWithPolicy(filepath.Join(userHome, ".local", "share", "xsessions"), "X", rejectSymlinks)
+			if err == nil {
+				for _, s := range localXSessions {
+					addSession(s)
+				}
+			}
+		}
+
+		// ~/.config/wayland-sessions
+		if !rejectSymlinks || !hasSymlinkComponent(userHome, ".config", "wayland-sessions") {
+			localWaylandSessions, err := d.discoverCustomSessionsWithPolicy(filepath.Join(userHome, ".config", "wayland-sessions"), "W", rejectSymlinks)
+			if err == nil {
+				for _, s := range localWaylandSessions {
+					addSession(s)
+				}
+			}
 		}
 	}
 
@@ -152,12 +161,36 @@ func (d *Discoverer) Discover(userHome string) ([]Session, error) {
 	return sessions, nil
 }
 
-func (d *Discoverer) discoverUserSessions(home string) ([]Session, error) {
+func hasSymlinkComponent(base string, parts ...string) bool {
+	cur := base
+	for _, p := range parts {
+		cur = filepath.Join(cur, p)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return false
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Discoverer) discoverUserSessions(home string, rejectSymlinks bool) ([]Session, error) {
 	var sessions []Session
 
 	checkFile := func(filename, name string) {
 		path := filepath.Join(home, filename)
-		info, err := os.Stat(path)
+		var info os.FileInfo
+		var err error
+		if rejectSymlinks {
+			info, err = os.Lstat(path)
+			if err != nil || info.Mode()&os.ModeSymlink != 0 {
+				return
+			}
+		} else {
+			info, err = os.Stat(path)
+		}
 		if err == nil && !info.IsDir() {
 			// Check if executable? Usually shells source them, but let's assume if it exists it's runnable via sh
 			// Or check execute bit?
@@ -180,6 +213,10 @@ func (d *Discoverer) discoverUserSessions(home string) ([]Session, error) {
 }
 
 func (d *Discoverer) discoverCustomSessions(dir string, sessionType string) ([]Session, error) {
+	return d.discoverCustomSessionsWithPolicy(dir, sessionType, false)
+}
+
+func (d *Discoverer) discoverCustomSessionsWithPolicy(dir string, sessionType string, rejectSymlinks bool) ([]Session, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -191,10 +228,20 @@ func (d *Discoverer) discoverCustomSessions(dir string, sessionType string) ([]S
 
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".desktop") {
+			if rejectSymlinks && entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
 			wg.Add(1)
 			go func(name string) {
 				defer wg.Done()
-				session, err := d.parseDesktopFile(filepath.Join(dir, name), sessionType)
+				desktopPath := filepath.Join(dir, name)
+				if rejectSymlinks {
+					info, err := os.Lstat(desktopPath)
+					if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+						return
+					}
+				}
+				session, err := d.parseDesktopFile(desktopPath, sessionType)
 				if err == nil {
 					mu.Lock()
 					sessions = append(sessions, session)

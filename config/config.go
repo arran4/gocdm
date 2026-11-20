@@ -2,12 +2,17 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+// SystemConfigPath is the system-wide fallback configuration path. Exposed for testing.
+var SystemConfigPath = "/etc/cdmrc"
 
 type Config struct {
 	DialogRC   string
@@ -41,12 +46,76 @@ func DiscoverConfigPath() string {
 		return p
 	}
 
-	p = "/etc/cdmrc"
-	if _, err := os.Stat(p); err == nil {
-		return p
+	if SystemConfigPath != "" {
+		if _, err := os.Stat(SystemConfigPath); err == nil {
+			return SystemConfigPath
+		}
 	}
 
 	return ""
+}
+
+// LoadSystemConfig loads either an explicit config path or only the system-wide config
+// (without consulting the launcher process's HOME), returning DefaultConfig if absent.
+func LoadSystemConfig(explicitPath string) (*Config, error) {
+	if explicitPath != "" {
+		return LoadConfig(explicitPath)
+	}
+	if SystemConfigPath != "" {
+		if _, err := os.Stat(SystemConfigPath); err == nil {
+			return LoadConfig(SystemConfigPath)
+		}
+	}
+	return DefaultConfig(), nil
+}
+
+// LoadConfigForUser resolves configuration in the authenticated user's context,
+// falling back to LoadSystemConfig if no user config exists.
+func LoadConfigForUser(explicitPath, homeDir string, expectedUID int, privileged bool) (*Config, error) {
+	if explicitPath != "" {
+		return LoadConfig(explicitPath)
+	}
+
+	if homeDir != "" && ValidateHomeDir(homeDir) == nil {
+		if privileged {
+			candidates := []string{
+				".cdmrc",
+				filepath.Join(".config", "cdm", "cdmrc"),
+			}
+			for _, relPath := range candidates {
+				data, err := SafeReadUserFile(homeDir, relPath, expectedUID, false)
+				if err != nil {
+					if os.IsNotExist(err) {
+						continue
+					}
+					return nil, err
+				}
+				cfg := DefaultConfig()
+				if err := parseConfigReader(bytes.NewReader(data), cfg); err != nil {
+					return nil, err
+				}
+				if err := validateSessionLists(cfg); err != nil {
+					return nil, err
+				}
+				return cfg, nil
+			}
+		} else {
+			p := filepath.Join(homeDir, ".cdmrc")
+			if _, err := os.Stat(p); err == nil {
+				return LoadConfig(p)
+			}
+			xdgConfig := os.Getenv("XDG_CONFIG_HOME")
+			if xdgConfig == "" {
+				xdgConfig = filepath.Join(homeDir, ".config")
+			}
+			p = filepath.Join(xdgConfig, "cdm", "cdmrc")
+			if _, err := os.Stat(p); err == nil {
+				return LoadConfig(p)
+			}
+		}
+	}
+
+	return LoadSystemConfig("")
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -73,8 +142,11 @@ func parseConfigFile(path string, cfg *Config) error {
 		return fmt.Errorf("open config: %w", err)
 	}
 	defer f.Close()
+	return parseConfigReader(f, cfg)
+}
 
-	s := bufio.NewScanner(f)
+func parseConfigReader(r io.Reader, cfg *Config) error {
+	s := bufio.NewScanner(r)
 	lineNo := 0
 	for s.Scan() {
 		lineNo++
