@@ -22,87 +22,92 @@ func NewPAMAuthenticator(service string) Authenticator {
 }
 
 func getTTY() string {
-	if tty, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", os.Stdin.Fd())); err == nil && strings.HasPrefix(tty, "/dev/") {
-		return strings.TrimPrefix(tty, "/dev/")
+	for _, fd := range []uintptr{os.Stdin.Fd(), os.Stdout.Fd()} {
+		if tty, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd)); err == nil && strings.HasPrefix(tty, "/dev/") {
+			return strings.TrimPrefix(tty, "/dev/")
+		}
 	}
 	return ""
 }
 
-type pamLoginSession struct {
+type pamTxAdapter struct {
 	tx *pam.Transaction
 }
 
-func (s *pamLoginSession) OpenSession() error {
-	return s.tx.OpenSession(0)
+func (a *pamTxAdapter) SetItemTTY(tty string) error {
+	return a.tx.SetItem(pam.Tty, tty)
 }
 
-func (s *pamLoginSession) Env() []string {
-	envMap, err := s.tx.GetEnvList()
-	if err != nil {
-		return nil
-	}
-	var env []string
-	for k, v := range envMap {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-	return env
+func (a *pamTxAdapter) GetItemUser() (string, error) {
+	return a.tx.GetItem(pam.User)
 }
 
-func (s *pamLoginSession) CloseSession() error {
-	err := s.tx.CloseSession(0)
-	if endErr := s.tx.End(); err == nil {
-		err = endErr
+func (a *pamTxAdapter) Authenticate() error {
+	return a.tx.Authenticate(0)
+}
+
+func (a *pamTxAdapter) AcctMgmt() error {
+	return a.tx.AcctMgmt(0)
+}
+
+func (a *pamTxAdapter) PutEnv(nameval string) error {
+	return a.tx.PutEnv(nameval)
+}
+
+func (a *pamTxAdapter) SetCred(flag pamCredFlag) error {
+	switch flag {
+	case credEstablish:
+		return a.tx.SetCred(pam.EstablishCred)
+	case credDelete:
+		return a.tx.SetCred(pam.DeleteCred)
+	default:
+		return fmt.Errorf("unsupported PAM credential flag: %v", flag)
 	}
-	return err
+}
+
+func (a *pamTxAdapter) OpenSession() error {
+	return a.tx.OpenSession(0)
+}
+
+func (a *pamTxAdapter) GetEnvList() (map[string]string, error) {
+	return a.tx.GetEnvList()
+}
+
+func (a *pamTxAdapter) CloseSession() error {
+	return a.tx.CloseSession(0)
+}
+
+func (a *pamTxAdapter) End() error {
+	return a.tx.End()
+}
+
+func mapPamStyle(style pam.Style) (pamConvStyle, bool) {
+	switch style {
+	case pam.PromptEchoOff:
+		return convPromptEchoOff, true
+	case pam.PromptEchoOn:
+		return convPromptEchoOn, true
+	case pam.ErrorMsg:
+		return convErrorMsg, true
+	case pam.TextInfo:
+		return convTextInfo, true
+	default:
+		return 0, false
+	}
 }
 
 func (a *pamAuthenticator) Authenticate(username, password string) (LoginSession, error) {
-	var pamMsgs []string
-
-	tx, err := pam.StartFunc(a.Service, username, func(style pam.Style, msg string) (string, error) {
-		switch style {
-		case pam.PromptEchoOff:
-			return password, nil
-		case pam.PromptEchoOn:
-			return username, nil
-		case pam.ErrorMsg, pam.TextInfo:
-			if s := strings.TrimSpace(msg); s != "" {
-				pamMsgs = append(pamMsgs, s)
+	return runPAMAuthenticate(username, password, getTTY(), func(conv func(pamConvStyle, string) (string, error)) (pamHandle, error) {
+		tx, err := pam.StartFunc(a.Service, username, func(style pam.Style, msg string) (string, error) {
+			mapped, ok := mapPamStyle(style)
+			if !ok {
+				return "", fmt.Errorf("unsupported PAM style: %v", style)
 			}
-			return "", nil
-		default:
-			return "", fmt.Errorf("unsupported PAM style: %v", style)
+			return conv(mapped, msg)
+		})
+		if err != nil {
+			return nil, err
 		}
+		return &pamTxAdapter{tx: tx}, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	// tx will be closed by LoginSession.CloseSession() on success
-
-	if tty := getTTY(); tty != "" {
-		_ = tx.SetItem(pam.Tty, tty)
-	}
-
-	if err := tx.Authenticate(0); err != nil {
-		endErr := tx.End()
-		if endErr != nil {
-			err = fmt.Errorf("PAM auth error: %w, subsequent end error: %v", err, endErr)
-		}
-		if len(pamMsgs) > 0 {
-			return nil, fmt.Errorf("%w: %s", err, strings.Join(pamMsgs, "; "))
-		}
-		return nil, err
-	}
-	pamMsgs = nil
-	if err := tx.AcctMgmt(0); err != nil {
-		endErr := tx.End()
-		if endErr != nil {
-			err = fmt.Errorf("PAM acct mgmt error: %w, subsequent end error: %v", err, endErr)
-		}
-		if len(pamMsgs) > 0 {
-			return nil, fmt.Errorf("account management failed: %w: %s", err, strings.Join(pamMsgs, "; "))
-		}
-		return nil, err
-	}
-	return &pamLoginSession{tx: tx}, nil
 }

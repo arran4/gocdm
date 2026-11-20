@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"github.com/arran4/gocdm/auth"
+	"github.com/arran4/gocdm/config"
 	"github.com/arran4/gocdm/session"
 	"github.com/arran4/gocdm/x11"
 	"io"
@@ -14,9 +15,12 @@ import (
 
 type mockLoginSession struct{}
 
-func (m mockLoginSession) OpenSession() error { return nil }
-func (m mockLoginSession) Env() []string { return nil }
-func (m mockLoginSession) CloseSession() error { return nil }
+func (m mockLoginSession) Username() string               { return "" }
+func (m mockLoginSession) SetEnv(key, value string) error { return nil }
+func (m mockLoginSession) OpenSession() error             { return nil }
+func (m mockLoginSession) Env() []string                  { return nil }
+func (m mockLoginSession) DrainNotices() []auth.Notice    { return nil }
+func (m mockLoginSession) CloseSession() error            { return nil }
 
 type mockAuthenticator struct {
 	err error
@@ -275,6 +279,19 @@ func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	mockEnvFiles(t)
 	mockUnsupported(t)
+	origGetuid := osGetuid
+	origGeteuid := osGeteuid
+	osGetuid = func() int { return 0 }
+	osGeteuid = func() int { return 0 }
+	t.Cleanup(func() {
+		osGetuid = origGetuid
+		osGeteuid = origGeteuid
+	})
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "")
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("SSH_CONNECTION", "")
+	t.Setenv("SSH_CLIENT", "")
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
 	origTuiPromptCredentials := TuiPromptCredentials
@@ -282,6 +299,11 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	origExecLookPath := ExecLookPath
 	origDropPrivilegesFn := DropPrivilegesFn
 	origExecProgramFn := ExecProgramFn
+	origChdirFn := ChdirFn
+	origSaveStateFn := SaveStateFn
+	origPrepareTTYFn := PrepareTTYFn
+	origRunSupervisedFn := RunSupervisedSessionFn
+	origSaveStateAsUserFn := SaveStateAsUserFn
 	defer func() {
 		NewAuthenticator = origNewAuthenticator
 		PromptCredentials = origPromptCredentials
@@ -290,7 +312,16 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 		ExecLookPath = origExecLookPath
 		DropPrivilegesFn = origDropPrivilegesFn
 		ExecProgramFn = origExecProgramFn
+		ChdirFn = origChdirFn
+		SaveStateFn = origSaveStateFn
+		PrepareTTYFn = origPrepareTTYFn
+		RunSupervisedSessionFn = origRunSupervisedFn
+		SaveStateAsUserFn = origSaveStateAsUserFn
 	}()
+	ChdirFn = func(dir string) error { return nil }
+	SaveStateFn = func(home, lastSession string, expectedUID int) error { return nil }
+	PrepareTTYFn = func(acct *config.AccountInfo) (TTYCleanup, string, error) { return noopTTYCleanup, "", nil }
+	SaveStateAsUserFn = func(acct *config.AccountInfo, lastSession string) error { return nil }
 	NewAuthenticator = func(service string) auth.Authenticator { return mockAuthenticator{} }
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "secret", nil }
 	TuiPromptCredentials = func(title, theme, version string, authFunc func(string, string) error) (string, string, error) {
@@ -300,18 +331,17 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	IsTerminal = func(fd int) bool { return true }
 	ExecLookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 	var droppedUser string
-	DropPrivilegesFn = func(username string) error {
-		droppedUser = username
-		return nil
-	}
 	var capturedBinary string
 	var capturedArgs []string
 	var capturedEnv []string
-	ExecProgramFn = func(binary string, args []string, env []string) error {
-		capturedBinary = binary
-		capturedArgs = append([]string{}, args...)
-		capturedEnv = append([]string{}, env...)
-		return nil
+	RunSupervisedSessionFn = func(spec SupervisedSessionSpec) (int, error) {
+		if spec.Account != nil {
+			droppedUser = spec.Account.Username
+		}
+		capturedBinary = spec.Binary
+		capturedArgs = append([]string{}, spec.Args...)
+		capturedEnv = append([]string{}, spec.Env...)
+		return 0, nil
 	}
 	tmpDir, err := os.MkdirTemp("", "cdm-test")
 	if err != nil {
@@ -342,12 +372,13 @@ flaglist=("C")`
 		t.Fatal(err)
 	}
 	exited := false
-	Run([]string{"-config", configPath, "-login"}, func(c int) { exited = true })
-	if exited {
-		t.Fatal("expected non-exit path when mocked exec succeeds")
+	code := -1
+	Run([]string{"-config", configPath, "-login"}, func(c int) { exited = true; code = c })
+	if !exited || code != 0 {
+		t.Fatalf("expected exit(0) after supervised session ends, got exited=%v code=%d", exited, code)
 	}
 	if droppedUser != "demo" {
-		t.Fatalf("expected privilege drop for demo, got %q", droppedUser)
+		t.Fatalf("expected supervised account for demo, got %q", droppedUser)
 	}
 	if capturedBinary != "/usr/bin/echo" {
 		t.Fatalf("expected binary /usr/bin/echo, got %q", capturedBinary)
@@ -505,6 +536,7 @@ func TestRunConsoleEmptyCommand(t *testing.T) {
 			t.Errorf("cleanup failed: %v", err)
 		}
 	})
+	t.Setenv("HOME", tmpDir)
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("")
 namelist=("Empty")
