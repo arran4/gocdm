@@ -1,5 +1,23 @@
 # Troubleshooting
 
+## `direct getty login mode (-login) requires root privileges`
+
+Cause: `-login` or `-mode=login` was invoked by an unprivileged user without `-dry-run`.
+
+Fix: omit `-login` or pass `-mode=user` when launching GoCDM from an already-authenticated user shell (`~/.profile` / `profile.sh`). Use `-login` only when GoCDM replaces `getty` as root (e.g., `getty@tty1.service`).
+
+## `direct getty login mode (-login) cannot run inside an active graphical session` / `inside an SSH session`
+
+Cause: `-login` or `-mode=login` was invoked when `DISPLAY`, `WAYLAND_DISPLAY`, `SSH_TTY`, `SSH_CONNECTION`, or `SSH_CLIENT` was set.
+
+Fix: use `-mode=user` (or omit `-login`) inside existing sessions; reserve `-login` for direct console/getty ownership.
+
+## `conflicting mode flags` / `invalid -mode`
+
+Cause: contradictory flags were supplied (such as `-login -mode=user` or `-login=false -mode=login`) or `-mode` was given an unrecognized value.
+
+Fix: specify one consistent mode (`-mode=auto`, `-mode=login`/`getty`, or `-mode=user`/`autostart`).
+
 ## `gocdm must be launched from an interactive TTY`
 
 Cause: launched from non-interactive shell/session.
@@ -28,10 +46,20 @@ Fix:
 - verify `-pam-service` target exists in `/etc/pam.d/`,
 - inspect PAM logs (`journalctl`, auth logs) for policy denial detail.
 
-## Session env fallback warning
+## `Error: failed to build secure session environment: ...`
 
-Message: `Warning: failed to build secure session environment: ...`
+Cause: NSS/passwd account lookup or `/etc/security/pam_env.conf` parsing failed in `-login` mode. GoCDM fails closed rather than inheriting the privileged getty environment.
 
-Cause: passwd/pam_env parsing issue.
+Fix: validate the authenticated user's `/etc/passwd` (or NSS) entry and `/etc/security/pam_env.conf` syntax.
 
-Fix: validate `/etc/passwd` entry and `/etc/security/pam_env.conf` syntax.
+## Legacy root-owned `state.json` or symlink refusal (`owned by uid ...`)
+
+Cause: `SafeSaveStateAt` found an existing `~/.config/gocdm` directory or `state.json` owned by another user (for example `uid 0` created by GoCDM `<= 0.0.26`), or encountered a symlink in the state path. GoCDM refuses to overwrite or `chown` user trees automatically.
+
+Fix: inspect `~/.config/gocdm` and remove or fix ownership manually as the user or administrator (`rm -rf ~/.config/gocdm` or `chown -R <user>:<group> ~/.config/gocdm` after verifying there are no symlinks).
+
+## `Warning: cannot change directory to ... falling back to /`
+
+Cause: the authenticated user's home directory does not exist or is not accessible after dropping privileges.
+
+Fix: ensure the account's home directory exists and is owned/accessible by the authenticated user.

@@ -12,11 +12,23 @@ func NewPAMAuthenticator(service string) Authenticator {
 
 type stubLoginSession struct{}
 
+func (s *stubLoginSession) Username() string {
+	return ""
+}
+
+func (s *stubLoginSession) SetEnv(key, value string) error {
+	return nil
+}
+
 func (s *stubLoginSession) OpenSession() error {
 	return nil
 }
 
 func (s *stubLoginSession) Env() []string {
+	return nil
+}
+
+func (s *stubLoginSession) DrainNotices() []Notice {
 	return nil
 }
 
