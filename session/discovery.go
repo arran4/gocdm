@@ -28,10 +28,11 @@ func RegisterPostParseDesktopHook(hook func(string, *Discoverer) string) {
 }
 
 type Session struct {
-	Name string
-	Exec string
-	Type string // "X", "C", or "W" (Wayland)
-	Path string
+	Name    string
+	Exec    string
+	Type    string // "X", "C", or "W" (Wayland)
+	Path    string
+	IsShell bool
 }
 
 type Discoverer struct {
@@ -314,14 +315,65 @@ func (d *Discoverer) discoverShellSessions() ([]Session, error) {
 		name := filepath.Base(shellPath)
 
 		sessions = append(sessions, Session{
-			Name: name,
-			Exec: shellPath,
-			Type: "C",
-			Path: d.ShellsFile,
+			Name:    name,
+			Exec:    shellPath,
+			Type:    "C",
+			Path:    d.ShellsFile,
+			IsShell: true,
 		})
 	}
 
 	return sessions, scanner.Err()
+}
+
+// IsRegisteredShell reports whether rawPath or resolvedPath corresponds to an entry in shellsFile
+// (defaulting to ShellsFile /etc/shells when empty), accounting for symlinks such as merged /usr.
+func IsRegisteredShell(rawPath, resolvedPath, shellsFile string) bool {
+	if shellsFile == "" {
+		shellsFile = ShellsFile
+	}
+	f, err := os.Open(shellsFile)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	resolvedReal := ""
+	if resolvedPath != "" {
+		if r, err := filepath.EvalSymlinks(resolvedPath); err == nil {
+			resolvedReal = r
+		} else {
+			resolvedReal = resolvedPath
+		}
+	}
+	rawReal := ""
+	if rawPath != "" {
+		if r, err := filepath.EvalSymlinks(rawPath); err == nil {
+			rawReal = r
+		}
+	}
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		entry := fields[0]
+		if entry == rawPath || (resolvedPath != "" && entry == resolvedPath) {
+			return true
+		}
+		if entryReal, err := filepath.EvalSymlinks(entry); err == nil {
+			if (resolvedReal != "" && entryReal == resolvedReal) || (rawReal != "" && entryReal == rawReal) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // stripFreedesktopExecVariables removes Freedesktop Exec field codes from the command line.

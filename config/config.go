@@ -233,6 +233,11 @@ func parseShellArray(value string) ([]string, error) {
 	return shellSplit(inner)
 }
 
+// SplitCommand parses a shell-quoted command string into argv tokens without invoking a shell.
+func SplitCommand(s string) ([]string, error) {
+	return shellSplit(s)
+}
+
 func shellSplit(s string) ([]string, error) {
 	var out []string
 	var cur strings.Builder

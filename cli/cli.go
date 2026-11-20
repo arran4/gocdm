@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strconv"
@@ -394,10 +395,33 @@ func Run(args []string, exit func(int)) {
 		return env
 	}
 
+	launchSupervisedProgram := func(binary string, cmdArgs, env []string, sessionCwd string, ttyCleanup TTYCleanup) {
+		code, runErr := RunSupervisedSessionFn(SupervisedSessionSpec{
+			Binary:  binary,
+			Args:    cmdArgs,
+			Env:     env,
+			Dir:     sessionCwd,
+			Account: acct,
+			Stdin:   os.Stdin,
+			Stdout:  os.Stdout,
+			Stderr:  os.Stderr,
+		})
+		if ttyErr := ttyCleanup(); ttyErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to restore TTY ownership: %v\n", ttyErr)
+		}
+		closeLoginSession(loginSession)
+		if runErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to run session: %v\n", runErr)
+			exit(1)
+			return
+		}
+		exit(code)
+	}
+
 	flagVal := normalizeSessionType(selectedSession.Type)
 
 	switch flagVal {
-	case "W", "C":
+	case "W":
 		parts := strings.Fields(selectedSession.Exec)
 		if len(parts) == 0 {
 			fmt.Fprintln(os.Stderr, "Empty command")
@@ -408,12 +432,8 @@ func Run(args []string, exit func(int)) {
 		bin := parts[0]
 		cmdArgs := parts[1:]
 
-		label := "Wayland"
-		if flagVal == "C" {
-			label = "console"
-		}
 		if *dryRun {
-			fmt.Printf("Dry run: would execute %s program: %s %v\n", label, bin, cmdArgs)
+			fmt.Printf("Dry run: would execute Wayland program: %s %v\n", bin, cmdArgs)
 			closeLoginSession(loginSession)
 			return
 		}
@@ -427,35 +447,67 @@ func Run(args []string, exit func(int)) {
 		}
 
 		if isLoginMode {
-			env, sessionCwd, ttyCleanup, ok := prepareGettySession(flagVal)
+			env, sessionCwd, ttyCleanup, ok := prepareGettySession("W")
 			if !ok {
 				return
 			}
-			code, runErr := RunSupervisedSessionFn(SupervisedSessionSpec{
-				Binary:  binary,
-				Args:    append([]string{bin}, cmdArgs...),
-				Env:     env,
-				Dir:     sessionCwd,
-				Account: acct,
-				Stdin:   os.Stdin,
-				Stdout:  os.Stdout,
-				Stderr:  os.Stderr,
-			})
-			if ttyErr := ttyCleanup(); ttyErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to restore TTY ownership: %v\n", ttyErr)
-			}
-			closeLoginSession(loginSession)
-			if runErr != nil {
-				fmt.Fprintf(os.Stderr, "Failed to run session: %v\n", runErr)
-				exit(1)
-				return
-			}
-			exit(code)
+			launchSupervisedProgram(binary, append([]string{bin}, cmdArgs...), env, sessionCwd, ttyCleanup)
 			return
 		}
 
-		env := prepareUserSession(flagVal)
+		env := prepareUserSession("W")
 		if err := ExecProgramFn(binary, append([]string{bin}, cmdArgs...), env); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
+			exit(1)
+			return
+		}
+
+	case "C":
+		parts, err := config.SplitCommand(selectedSession.Exec)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid command: %v\n", err)
+			closeLoginSession(loginSession)
+			exit(1)
+			return
+		}
+		if len(parts) == 0 {
+			fmt.Fprintln(os.Stderr, "Empty command")
+			closeLoginSession(loginSession)
+			exit(1)
+			return
+		}
+
+		if *dryRun {
+			fmt.Printf("Dry run: would execute console program: %s %v\n", parts[0], parts[1:])
+			if isLoginMode && len(parts) == 1 && (selectedSession.IsShell || session.IsRegisteredShell(parts[0], parts[0], ShellsFilePath)) {
+				fmt.Printf("Dry run: login shell argv[0]=%s\n", "-"+filepath.Base(parts[0]))
+			}
+			closeLoginSession(loginSession)
+			return
+		}
+
+		plan, err := BuildConsoleLaunchPlan(selectedSession, opMode, ExecLookPath, ShellsFilePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			closeLoginSession(loginSession)
+			exit(1)
+			return
+		}
+
+		if isLoginMode {
+			env, sessionCwd, ttyCleanup, ok := prepareGettySession("C")
+			if !ok {
+				return
+			}
+			if plan.ShellEnv != "" {
+				env = config.SetEnvValue(env, "SHELL", plan.ShellEnv)
+			}
+			launchSupervisedProgram(plan.Binary, plan.Args, env, sessionCwd, ttyCleanup)
+			return
+		}
+
+		env := prepareUserSession("C")
+		if err := ExecProgramFn(plan.Binary, plan.Args, env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
 			return

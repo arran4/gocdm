@@ -196,7 +196,11 @@ This keeps behavior intentional on non-Linux/BSD targets instead of failing late
 
 ### Session path status
 
-- Console (`C`) and Wayland (`W`) entries execute configured commands directly.
+- Console (`C`) entries distinguish registered login shells (`/etc/shells`, matching `IsShell` or symlink-resolved bare shell paths) from arbitrary console commands or commands with explicit arguments:
+  - In direct getty mode (`-login`), selected bare shells are invoked with login-shell `argv[0]` (`-<basename>`, e.g. `-zsh`, `-bash`) in the authenticated user's home with `SHELL` set to the selected shell so normal system/user login initialization runs while PAM delivers MOTD once.
+  - In post-login autostart mode (`-mode=user`), selected shells launch without a leading `-` to avoid duplicating login profile startup.
+  - Arbitrary console executables (and shell invocations with explicit arguments) execute directly with shell-quoted argument splitting and do not source user shell profiles.
+- Wayland (`W`) entries execute configured commands directly.
 - X (`X`) supports both existing-session VT handoff (`locktty`) and new-session launch (`startx` path).
 
 ### Intentional differences from legacy shell flow
