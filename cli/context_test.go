@@ -15,10 +15,28 @@ import (
 )
 
 type spyLoginSession struct {
+	username    string
 	events      *[]string
 	pamEnv      []string
+	pamPutEnv   map[string]string
+	notices     []auth.Notice
 	openErr     error
 	closeCalled *bool
+}
+
+func (s *spyLoginSession) Username() string {
+	return s.username
+}
+
+func (s *spyLoginSession) SetEnv(key, value string) error {
+	if s.pamPutEnv == nil {
+		s.pamPutEnv = make(map[string]string)
+	}
+	s.pamPutEnv[key] = value
+	if s.events != nil {
+		*s.events = append(*s.events, "set_env:"+key)
+	}
+	return nil
 }
 
 func (s *spyLoginSession) OpenSession() error {
@@ -32,7 +50,19 @@ func (s *spyLoginSession) Env() []string {
 	return s.pamEnv
 }
 
+func (s *spyLoginSession) DrainNotices() []auth.Notice {
+	out := s.notices
+	s.notices = nil
+	if s.events != nil {
+		*s.events = append(*s.events, "drain_notices")
+	}
+	return out
+}
+
 func (s *spyLoginSession) CloseSession() error {
+	if s.events != nil {
+		*s.events = append(*s.events, "close_session")
+	}
 	if s.closeCalled != nil {
 		*s.closeCalled = true
 	}
@@ -67,6 +97,13 @@ func setupGettyContextTestEnv(t *testing.T) {
 	origLookup := LookupAccountFn
 	origChdir := ChdirFn
 	origSaveState := SaveStateFn
+	origSaveStateAsUser := SaveStateAsUserFn
+	origPrepareTTY := PrepareTTYFn
+	origRunSupervised := RunSupervisedSessionFn
+	origLaunchSupervisedX := LaunchSupervisedXSessionFn
+	origNoticesStdout := NoticesStdout
+	origNoticesStderr := NoticesStderr
+	origReadlink := osReadlink
 	origPasswd := PasswdFilePath
 	origPamEnv := PamEnvConfPath
 	origSysCfg := config.SystemConfigPath
@@ -85,6 +122,13 @@ func setupGettyContextTestEnv(t *testing.T) {
 		LookupAccountFn = origLookup
 		ChdirFn = origChdir
 		SaveStateFn = origSaveState
+		SaveStateAsUserFn = origSaveStateAsUser
+		PrepareTTYFn = origPrepareTTY
+		RunSupervisedSessionFn = origRunSupervised
+		LaunchSupervisedXSessionFn = origLaunchSupervisedX
+		NoticesStdout = origNoticesStdout
+		NoticesStderr = origNoticesStderr
+		osReadlink = origReadlink
 		PasswdFilePath = origPasswd
 		PamEnvConfPath = origPamEnv
 		config.SystemConfigPath = origSysCfg
@@ -93,6 +137,7 @@ func setupGettyContextTestEnv(t *testing.T) {
 	osGetuid = func() int { return 0 }
 	osGeteuid = func() int { return 0 }
 	IsTerminal = func(int) bool { return true }
+	PrepareTTYFn = func(acct *config.AccountInfo) (TTYCleanup, string, error) { return noopTTYCleanup, "", nil }
 	for _, k := range []string{"DISPLAY", "WAYLAND_DISPLAY", "SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT"} {
 		t.Setenv(k, "")
 	}
@@ -161,45 +206,40 @@ func TestGettyLoginUsesAuthenticatedUserConfigAndSessionsNotRoots(t *testing.T) 
 	}
 
 	ExecLookPath = func(file string) (string, error) { return file, nil }
-	DropPrivilegesFn = func(username string) error {
-		if username != "alice" {
-			return fmt.Errorf("unexpected user %q", username)
-		}
-		return nil
-	}
-	var chdirTarget string
-	ChdirFn = func(dir string) error {
-		chdirTarget = dir
-		return nil
-	}
+
 	var savedHome, savedSession string
-	SaveStateFn = func(home, lastSession string, expectedUID int) error {
-		savedHome = home
+	SaveStateAsUserFn = func(acct *config.AccountInfo, lastSession string) error {
+		savedHome = acct.HomeDir
 		savedSession = lastSession
-		if expectedUID != uid {
-			return fmt.Errorf("expectedUID=%d want %d", expectedUID, uid)
+		if acct.UID != uid {
+			return fmt.Errorf("expectedUID=%d want %d", acct.UID, uid)
 		}
 		return nil
 	}
 
-	var capturedEnv []string
-	ExecProgramFn = func(binary string, args []string, env []string) error {
-		capturedEnv = env
-		return nil
+	var capturedSpec SupervisedSessionSpec
+	RunSupervisedSessionFn = func(spec SupervisedSessionSpec) (int, error) {
+		capturedSpec = spec
+		return 0, nil
 	}
 
-	Run([]string{"-login"}, func(c int) { t.Fatalf("unexpected exit(%d)", c) })
+	var exited bool
+	var exitCode int
+	Run([]string{"-login"}, func(c int) { exited = true; exitCode = c })
 
+	if !exited || exitCode != 0 {
+		t.Fatalf("expected exit(0), got exited=%v code=%d", exited, exitCode)
+	}
 	if discoveredHome != aliceHome {
 		t.Fatalf("DiscoverSessionsFn called with %q, want %q (not rootHome %q)", discoveredHome, aliceHome, rootHome)
 	}
-	if chdirTarget != aliceHome {
-		t.Fatalf("ChdirFn target = %q, want %q", chdirTarget, aliceHome)
+	if capturedSpec.Dir != aliceHome {
+		t.Fatalf("supervised Dir = %q, want %q", capturedSpec.Dir, aliceHome)
 	}
 	if savedHome != aliceHome || savedSession != "alice-zsh" {
-		t.Fatalf("SaveStateFn got (%q, %q), want (%q, %q)", savedHome, savedSession, aliceHome, "alice-zsh")
+		t.Fatalf("SaveStateAsUserFn got (%q, %q), want (%q, %q)", savedHome, savedSession, aliceHome, "alice-zsh")
 	}
-	envMap := config.EnvSliceToMap(capturedEnv)
+	envMap := config.EnvSliceToMap(capturedSpec.Env)
 	if envMap["HOME"] != aliceHome || envMap["USER"] != "alice" || envMap["LOGNAME"] != "alice" || envMap["SHELL"] != "/bin/zsh" {
 		t.Fatalf("unexpected identity vars in exec env: %v", envMap)
 	}
@@ -244,26 +284,46 @@ func TestGettyLoginPrivilegeAndStateOrdering(t *testing.T) {
 		return "alice", "pw", authFunc("alice", "pw")
 	}
 	ExecLookPath = func(file string) (string, error) { return "/bin/" + file, nil }
-	DropPrivilegesFn = func(username string) error {
-		events = append(events, "drop_privileges")
+	PrepareTTYFn = func(acct *config.AccountInfo) (TTYCleanup, string, error) {
+		events = append(events, "prepare_tty")
+		return func() error {
+			events = append(events, "restore_tty")
+			return nil
+		}, "", nil
+	}
+	SaveStateAsUserFn = func(acct *config.AccountInfo, lastSession string) error {
+		events = append(events, "save_state_as_user")
 		return nil
 	}
-	ChdirFn = func(dir string) error {
-		events = append(events, "chdir")
-		return nil
-	}
-	SaveStateFn = func(home, lastSession string, expectedUID int) error {
-		events = append(events, "save_state")
-		return nil
-	}
-	ExecProgramFn = func(binary string, args []string, env []string) error {
-		events = append(events, "exec")
-		return nil
+	var gotSpec SupervisedSessionSpec
+	RunSupervisedSessionFn = func(spec SupervisedSessionSpec) (int, error) {
+		gotSpec = spec
+		events = append(events, "supervise")
+		return 0, nil
 	}
 
-	Run([]string{"-login", "-config", cfgPath}, func(c int) { t.Fatalf("unexpected exit(%d)", c) })
+	var exited bool
+	var exitCode int
+	Run([]string{"-login", "-config", cfgPath}, func(c int) { exited = true; exitCode = c })
 
-	want := []string{"auth", "open_session", "drop_privileges", "chdir", "save_state", "exec"}
+	if !exited || exitCode != 0 {
+		t.Fatalf("expected exit(0), got exited=%v code=%d", exited, exitCode)
+	}
+	if gotSpec.Account == nil || gotSpec.Account.Username != "alice" || gotSpec.Dir != aliceHome {
+		t.Fatalf("unexpected supervised spec: account=%+v dir=%q", gotSpec.Account, gotSpec.Dir)
+	}
+	want := []string{
+		"auth",
+		"set_env:XDG_SESSION_TYPE",
+		"set_env:XDG_SESSION_CLASS",
+		"open_session",
+		"drain_notices",
+		"prepare_tty",
+		"save_state_as_user",
+		"supervise",
+		"restore_tty",
+		"close_session",
+	}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("call order = %v, want %v", events, want)
 	}
@@ -297,24 +357,14 @@ func TestGettyLoginMissingHomeFallsBackToRootDir(t *testing.T) {
 		return "alice", "pw", authFunc("alice", "pw")
 	}
 	ExecLookPath = func(file string) (string, error) { return "/bin/" + file, nil }
-	DropPrivilegesFn = func(string) error { return nil }
-
-	var chdirCalls []string
-	ChdirFn = func(dir string) error {
-		chdirCalls = append(chdirCalls, dir)
-		if dir == missingHome {
-			return os.ErrNotExist
-		}
-		return nil
-	}
-	SaveStateFn = func(home, lastSession string, expectedUID int) error {
+	SaveStateAsUserFn = func(acct *config.AccountInfo, lastSession string) error {
 		return os.ErrNotExist
 	}
 
-	var capturedEnv []string
-	ExecProgramFn = func(binary string, args []string, env []string) error {
-		capturedEnv = env
-		return nil
+	var capturedSpec SupervisedSessionSpec
+	RunSupervisedSessionFn = func(spec SupervisedSessionSpec) (int, error) {
+		capturedSpec = spec
+		return 0, nil
 	}
 
 	oldStderr := os.Stderr
@@ -322,17 +372,22 @@ func TestGettyLoginMissingHomeFallsBackToRootDir(t *testing.T) {
 	os.Stderr = w
 	defer func() { os.Stderr = oldStderr }()
 
-	Run([]string{"-login", "-config", cfgPath}, func(c int) { t.Fatalf("unexpected exit(%d)", c) })
+	var exited bool
+	var exitCode int
+	Run([]string{"-login", "-config", cfgPath}, func(c int) { exited = true; exitCode = c })
 	_ = w.Close()
 	errOut, _ := io.ReadAll(r)
 
-	if !reflect.DeepEqual(chdirCalls, []string{missingHome, "/"}) {
-		t.Fatalf("chdir calls = %v, want [%s /]", chdirCalls, missingHome)
+	if !exited || exitCode != 0 {
+		t.Fatalf("expected exit(0), got exited=%v code=%d", exited, exitCode)
+	}
+	if capturedSpec.Dir != "/" {
+		t.Fatalf("supervised Dir = %q, want /", capturedSpec.Dir)
 	}
 	if !strings.Contains(string(errOut), "falling back to /") {
 		t.Fatalf("expected fallback warning on stderr, got %q", string(errOut))
 	}
-	envMap := config.EnvSliceToMap(capturedEnv)
+	envMap := config.EnvSliceToMap(capturedSpec.Env)
 	if envMap["PWD"] != "/" {
 		t.Fatalf("expected PWD=/ after fallback, got %q", envMap["PWD"])
 	}
@@ -359,9 +414,9 @@ func TestGettyLoginFailuresCloseSessionAndNeverFallbackToRootEnv(t *testing.T) {
 		TuiPromptCredentials = func(title, theme, version string, authFunc func(string, string) error) (string, string, error) {
 			return "ghost", "pw", authFunc("ghost", "pw")
 		}
-		ExecProgramFn = func(string, []string, []string) error {
-			t.Fatal("ExecProgramFn must not be called when account lookup fails")
-			return nil
+		RunSupervisedSessionFn = func(SupervisedSessionSpec) (int, error) {
+			t.Fatal("RunSupervisedSessionFn must not be called when account lookup fails")
+			return 1, nil
 		}
 
 		exited := false
@@ -403,9 +458,9 @@ func TestGettyLoginFailuresCloseSessionAndNeverFallbackToRootEnv(t *testing.T) {
 			return "alice", "pw", authFunc("alice", "pw")
 		}
 		ExecLookPath = func(file string) (string, error) { return "/bin/" + file, nil }
-		ExecProgramFn = func(string, []string, []string) error {
-			t.Fatal("ExecProgramFn must not be called when env construction fails")
-			return nil
+		RunSupervisedSessionFn = func(SupervisedSessionSpec) (int, error) {
+			t.Fatal("RunSupervisedSessionFn must not be called when env construction fails")
+			return 1, nil
 		}
 
 		exited := false
@@ -441,6 +496,10 @@ func TestUserSessionModePreservesInheritedEnvAndCWD(t *testing.T) {
 	DropPrivilegesFn = func(string) error {
 		t.Fatal("DropPrivilegesFn must not be called in user mode")
 		return nil
+	}
+	RunSupervisedSessionFn = func(SupervisedSessionSpec) (int, error) {
+		t.Fatal("RunSupervisedSessionFn must not be called in user mode")
+		return 1, nil
 	}
 	ExecLookPath = func(file string) (string, error) { return "/bin/" + file, nil }
 
