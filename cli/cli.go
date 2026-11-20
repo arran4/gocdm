@@ -46,6 +46,7 @@ func Run(args []string, exit func(int)) {
 	forceMenu := fs.Bool("menu", false, "Force menu display even if only one session is found")
 	showVersion := fs.Bool("version", false, "Show version information")
 	loginMode := fs.Bool("login", false, "Prompt for username/password and authenticate with PAM")
+	modeFlag := fs.String("mode", string(ModeAuto), "Operating mode: auto, login (getty), or user (autostart)")
 	tuiLogin := fs.Bool("tui-login", true, "Use TUI for login prompt (when -login is enabled)")
 	pamService := fs.String("pam-service", "login", "PAM service name used with -login")
 	debugEnv := fs.Bool("debug-env", false, "Print session environment before exec (redacts sensitive values)")
@@ -65,14 +66,21 @@ func Run(args []string, exit func(int)) {
 		return
 	}
 
-	// Getty auto-detection for login mode consolidation
-	if !*loginMode && os.Getenv("DISPLAY") == "" {
-		for _, fd := range []string{"0", "1", "2"} {
-			if ttyPath, err := osReadlink("/proc/self/fd/" + fd); err == nil && isSecureTTYPath(ttyPath) {
-				*loginMode = true
-				break
-			}
+	var modeFlagSet, loginFlagSet bool
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "mode":
+			modeFlagSet = true
+		case "login":
+			loginFlagSet = true
 		}
+	})
+
+	modeSel, err := ResolveModeSelection(modeFlagSet, *modeFlag, loginFlagSet, *loginMode)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exit(2)
+		return
 	}
 
 	var configPath string
@@ -81,6 +89,14 @@ func Run(args []string, exit func(int)) {
 		exit(2)
 		return
 	}
+
+	opMode, _, err := ResolveOperatingMode(modeSel, defaultProcessContext(), *dryRun)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exit(1)
+		return
+	}
+	isLoginMode := opMode == ModeGettyLogin
 	if *configPathFlag != "" {
 		configPath = *configPathFlag
 	} else if fs.NArg() > 0 {
@@ -145,12 +161,7 @@ func Run(args []string, exit func(int)) {
 
 	username := currentUsername()
 	var loginSession auth.LoginSession
-	if *loginMode && !SupportsLoginModeFn() {
-		fmt.Fprintf(os.Stderr, "-login is not supported on %s (support tier: %s)\n", runtime.GOOS, PlatformSupportTierFn())
-		exit(1)
-		return
-	}
-	if *loginMode {
+	if isLoginMode {
 		authenticator := NewAuthenticator(*pamService)
 		var promptedUser, password string
 		var err error
@@ -230,7 +241,7 @@ func Run(args []string, exit func(int)) {
 	}
 
 	var homeDir string
-	if *loginMode {
+	if isLoginMode {
 		entry, err := config.LoadPasswdEntry(PasswdFilePath, username)
 		if err == nil {
 			homeDir = entry.HomeDir
@@ -243,7 +254,7 @@ func Run(args []string, exit func(int)) {
 	setupUserContext := func(baseEnv []string, stype, sname string) []string {
 		envMap := config.EnvSliceToMap(baseEnv)
 
-		if *loginMode && loginSession != nil {
+		if isLoginMode && loginSession != nil {
 			if err := loginSession.OpenSession(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: PAM open session failed: %v\n", err)
 				exit(1)
@@ -360,7 +371,7 @@ func Run(args []string, exit func(int)) {
 		if env == nil { return }
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
-		if *loginMode {
+		if isLoginMode {
 			if err := DropPrivilegesFn(username); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
 				if loginSession != nil {
@@ -414,7 +425,7 @@ func Run(args []string, exit func(int)) {
 		if env == nil { return }
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
-		if *loginMode {
+		if isLoginMode {
 			if err := DropPrivilegesFn(username); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
 				if loginSession != nil {
@@ -509,7 +520,7 @@ func Run(args []string, exit func(int)) {
 		env := setupUserContext(sessionEnv, "X", selectedSession.Name)
 		if env == nil { return }
 
-		if *loginMode {
+		if isLoginMode {
 			if err := DropPrivilegesFn(username); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
 				if loginSession != nil {
@@ -543,25 +554,7 @@ func Run(args []string, exit func(int)) {
 // It must reside securely in /dev/ (no subdirectories), start with "/dev/tty",
 // be followed by a valid number, and actually be a character device on the filesystem.
 func isSecureTTYPath(path string) bool {
-	if !strings.HasPrefix(path, "/dev/tty") || strings.Contains(path[8:], "/") {
-		return false
-	}
-
-	suffix := path[8:]
-	if len(suffix) == 0 {
-		return false
-	}
-	for _, char := range suffix {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-
-	info, err := osStat(path)
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
+	return isSecureTTYPathWithStat(path, osStat)
 }
 
 func currentUsername() string {
