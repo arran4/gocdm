@@ -318,3 +318,89 @@ func TestDiscoverSkipsEmptyHomeAndPrivilegedSymlinks(t *testing.T) {
 		t.Fatalf("expected privileged symlinked user sessions to be skipped, got %+v", sessions)
 	}
 }
+
+func TestShellSessionIsShellFlagAndRegistration(t *testing.T) {
+	tmpDir := t.TempDir()
+	binDir := filepath.Join(tmpDir, "usr", "bin")
+	aliasDir := filepath.Join(tmpDir, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(aliasDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	zshReal := filepath.Join(binDir, "zsh")
+	if err := os.WriteFile(zshReal, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	zshLink := filepath.Join(aliasDir, "zsh")
+	if err := os.Symlink(zshReal, zshLink); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	htopReal := filepath.Join(binDir, "htop")
+	if err := os.WriteFile(htopReal, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	shellsFile := filepath.Join(tmpDir, "shells")
+	if err := os.WriteFile(shellsFile, []byte("# valid shells\n"+zshLink+" # zsh comment\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	origX11 := X11SessionsDir
+	origXSessions := XSessionsDir
+	origWayland := WaylandSessionsDir
+	X11SessionsDir = filepath.Join(tmpDir, "no-x11")
+	XSessionsDir = filepath.Join(tmpDir, "no-xsessions")
+	WaylandSessionsDir = filepath.Join(tmpDir, "no-wayland")
+	t.Cleanup(func() {
+		X11SessionsDir = origX11
+		XSessionsDir = origXSessions
+		WaylandSessionsDir = origWayland
+	})
+
+	home := filepath.Join(tmpDir, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".xinitrc"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	d := NewDiscoverer()
+	d.ShellsFile = shellsFile
+	d.ExecLookPath = func(file string) (string, error) {
+		if file == zshLink {
+			return zshLink, nil
+		}
+		return "", os.ErrNotExist
+	}
+	sessions, err := d.Discover(home)
+	if err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %+v", sessions)
+	}
+	for _, s := range sessions {
+		if s.Name == "zsh" && !s.IsShell {
+			t.Fatalf("expected shell session IsShell=true: %+v", s)
+		}
+		if s.Name != "zsh" && s.IsShell {
+			t.Fatalf("expected non-shell session IsShell=false: %+v", s)
+		}
+	}
+
+	if !IsRegisteredShell(zshLink, zshLink, shellsFile) {
+		t.Fatal("expected exact shell link match")
+	}
+	if !IsRegisteredShell("zsh", zshReal, shellsFile) {
+		t.Fatal("expected symlink-resolved merged-/usr shell match")
+	}
+	if IsRegisteredShell("htop", htopReal, shellsFile) {
+		t.Fatal("expected unregistered binary htop not to match shells file")
+	}
+	if IsRegisteredShell(zshLink, zshLink, filepath.Join(tmpDir, "missing-shells")) {
+		t.Fatal("expected missing shells file to return false")
+	}
+}
