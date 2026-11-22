@@ -14,8 +14,8 @@ import (
 
 type mockLoginSession struct{}
 
-func (m mockLoginSession) OpenSession() error { return nil }
-func (m mockLoginSession) Env() []string { return nil }
+func (m mockLoginSession) OpenSession() error  { return nil }
+func (m mockLoginSession) Env() []string       { return nil }
 func (m mockLoginSession) CloseSession() error { return nil }
 
 type mockAuthenticator struct {

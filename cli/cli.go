@@ -310,13 +310,13 @@ func Run(args []string, exit func(int)) {
 			fmt.Println("--- DEBUG ENV ---")
 			for _, e := range env {
 				if strings.HasPrefix(e, "DBUS_SESSION_BUS_ADDRESS=") ||
-				   strings.HasPrefix(e, "HOME=") ||
-				   strings.HasPrefix(e, "USER=") ||
-				   strings.HasPrefix(e, "LOGNAME=") ||
-				   strings.HasPrefix(e, "SHELL=") ||
-				   strings.HasPrefix(e, "XDG_RUNTIME_DIR=") ||
-				   strings.HasPrefix(e, "XDG_SESSION_TYPE=") ||
-				   strings.HasPrefix(e, "DESKTOP_SESSION=") {
+					strings.HasPrefix(e, "HOME=") ||
+					strings.HasPrefix(e, "USER=") ||
+					strings.HasPrefix(e, "LOGNAME=") ||
+					strings.HasPrefix(e, "SHELL=") ||
+					strings.HasPrefix(e, "XDG_RUNTIME_DIR=") ||
+					strings.HasPrefix(e, "XDG_SESSION_TYPE=") ||
+					strings.HasPrefix(e, "DESKTOP_SESSION=") {
 					fmt.Println(e)
 				} else if strings.Contains(e, "=") {
 					parts := strings.SplitN(e, "=", 2)
@@ -368,7 +368,9 @@ func Run(args []string, exit func(int)) {
 		}
 
 		env := setupUserContext(sessionEnv, "W", selectedSession.Name)
-		if env == nil { return }
+		if env == nil {
+			return
+		}
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
 		if isLoginMode {
@@ -422,7 +424,9 @@ func Run(args []string, exit func(int)) {
 		}
 
 		env := setupUserContext(sessionEnv, "C", selectedSession.Name)
-		if env == nil { return }
+		if env == nil {
+			return
+		}
 		env = append(env, fmt.Sprintf("GOCDM_SPAWN=%d", os.Getpid()))
 
 		if isLoginMode {
@@ -518,7 +522,9 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 		env := setupUserContext(sessionEnv, "X", selectedSession.Name)
-		if env == nil { return }
+		if env == nil {
+			return
+		}
 
 		if isLoginMode {
 			if err := DropPrivilegesFn(username); err != nil {
