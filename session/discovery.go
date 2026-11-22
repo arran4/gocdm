@@ -336,7 +336,7 @@ func IsRegisteredShell(rawPath, resolvedPath, shellsFile string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	resolvedReal := ""
 	if resolvedPath != "" {
