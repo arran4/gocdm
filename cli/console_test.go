@@ -441,7 +441,8 @@ func TestRealZshLoginAndUserModes(t *testing.T) {
 
 		code, err := runSupervisedSession(SupervisedSessionSpec{
 			Binary: plan.Binary,
-			Args:   append(plan.Args, "-ic", "exit 0"),
+			// +m disables MONITOR job control (tcsetpgrp) since test pipes do not own the controlling PTY.
+			Args:   append(plan.Args, "+m", "-ic", "exit 0"),
 			Env:    env,
 			Dir:    resolvedHome,
 			Stdin:  strings.NewReader(""),
