@@ -139,8 +139,14 @@ Always release returned strings with `GoCDMFreeCString`.
 * Credentials are read only at interactive prompt time and sent directly to PAM for validation.
 * Pre-login configuration only reads explicit `-config`/`RCFILE` or `/etc/cdmrc` (never the launching root user's `~/.cdmrc`). User config, session discovery, and last-session state are resolved only after authentication against the authenticated account.
 * On successful authentication, GoCDM constructs the session environment from a minimal allowlisted base (`TERM` and locale/TZ variables) rather than inheriting the privileged launcher environment wholesale, then applies canonical identity (`USER`, `LOGNAME`, `HOME`, `SHELL`), safe `PATH`, `/etc/security/pam_env.conf`, and authoritative PAM session variables (such as `pam_systemd` values) without fabricating `XDG_RUNTIME_DIR` or `DBUS_SESSION_BUS_ADDRESS`.
-* Privilege transitions are explicit: `-login` follows the full PAM lifecycle (`pam_authenticate` -> `pam_acct_mgmt` -> `pam_setcred(ESTABLISH)` -> `pam_open_session`), flushes PAM notices/MOTD once, persists state via an unprivileged helper, supervises the child session with credential drop (`UID`/`GID`/supplementary groups) and TTY handoff, and restores TTY state + runs `pam_close_session` / `pam_setcred(DELETE)` / `pam_end` on logout. See `docs/PAM_LIFECYCLE.md` for architecture and signal details.
+* Privilege transitions are explicit: `-login` follows the full PAM lifecycle (`pam_authenticate` -> `pam_acct_mgmt` -> `pam_setcred(ESTABLISH)` -> `pam_open_session`), flushes PAM notices/MOTD once (relying exclusively on PAM without duplicating `/etc/motd`), persists state via an unprivileged helper, runs a per-VT parent/child supervisor in `ModeGettyLogin` (forwarding `SIGTERM`/`SIGHUP` to the child process group while resetting child interactive signal dispositions such as `SIGINT` to `SIG_DFL`), drops credentials (`UID`/`GID`/supplementary groups) in the child, performs `fstat`/`fchown`/`fchmod` TTY handoff, and restores TTY ownership/permissions + foreground process group + `pam_close_session` / `pam_setcred(DELETE)` / `pam_end` on logout (leaving `ModeUserSession` supervisor-free with direct `exec`).
 * `-login` should be run from a real TTY (the binary rejects non-interactive launch unless `-dry-run` is used).
+
+##### Opt-in spare-VT validation (PAM lifecycle & MOTD)
+
+Leave `tty1` untouched as a recovery console and configure only a spare VT (e.g. `getty@tty2.service`) with `ExecStart=-/usr/local/bin/gocdm -login`:
+1. Switch to `tty2`, log in with a test account, and verify configured PAM notices/MOTD appear once and `loginctl session-status` shows an active `user` class session on `seat0`/`tty2` (redact secrets if inspecting logs).
+2. Exit the session and verify from the recovery VT via `loginctl list-sessions` that the closed session was removed cleanly and a subsequent login on `tty2` gets a fresh session and single MOTD.
 
 #### PAM requirements
 

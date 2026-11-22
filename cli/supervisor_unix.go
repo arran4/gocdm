@@ -10,15 +10,21 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/arran4/gocdm/config"
 	"golang.org/x/sys/unix"
 )
 
-func accountCredential(acct *config.AccountInfo) *syscall.Credential {
-	if osGeteuid() != 0 || acct == nil {
-		return nil
+var kernelGeteuid = os.Geteuid
+
+func accountCredential(acct *config.AccountInfo) (*syscall.Credential, error) {
+	if kernelGeteuid() != 0 {
+		return nil, nil
+	}
+	if acct == nil || acct.UID < 0 || acct.GID < 0 {
+		return nil, fmt.Errorf("refusing to launch session as root without a valid authenticated account")
 	}
 	groups := make([]uint32, 0, len(acct.Groups)+1)
 	for _, g := range acct.Groups {
@@ -26,14 +32,14 @@ func accountCredential(acct *config.AccountInfo) *syscall.Credential {
 			groups = append(groups, uint32(g))
 		}
 	}
-	if len(groups) == 0 && acct.GID >= 0 {
+	if len(groups) == 0 {
 		groups = append(groups, uint32(acct.GID))
 	}
 	return &syscall.Credential{
 		Uid:    uint32(acct.UID),
 		Gid:    uint32(acct.GID),
 		Groups: groups,
-	}
+	}, nil
 }
 
 func controllingTTYFGPgrp(f *os.File) (int, int, bool) {
@@ -49,7 +55,7 @@ func controllingTTYFGPgrp(f *os.File) (int, int, bool) {
 	if err != nil {
 		return 0, 0, false
 	}
-	defer devTTY.Close()
+	defer func() { _ = devTTY.Close() }()
 
 	ctrlPgrp, err := unix.IoctlGetInt(int(devTTY.Fd()), unix.TIOCGPGRP)
 	if err != nil || ctrlPgrp != fdPgrp {
@@ -85,7 +91,11 @@ func runSupervisedSessionWithSignals(spec SupervisedSessionSpec, testSigs <-chan
 	}
 
 	sysAttr := &syscall.SysProcAttr{Setpgid: true}
-	if cred := accountCredential(spec.Account); cred != nil {
+	cred, err := accountCredential(spec.Account)
+	if err != nil {
+		return 1, err
+	}
+	if cred != nil {
 		sysAttr.Credential = cred
 	}
 
@@ -103,9 +113,34 @@ func runSupervisedSessionWithSignals(spec SupervisedSessionSpec, testSigs <-chan
 	}
 	cmd.SysProcAttr = sysAttr
 
-	ignoredSigs := []os.Signal{syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU}
-	signal.Ignore(ignoredSigs...)
-	defer signal.Reset(ignoredSigs...)
+	// Catch (rather than signal.Ignore) interactive terminal/job-control signals so Go's
+	// execve resets child dispositions to SIG_DFL instead of leaking SIG_IGN to children.
+	drainSigs := make(chan os.Signal, 8)
+	signal.Notify(drainSigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTSTP, syscall.SIGTTIN, syscall.SIGTTOU)
+	stopDrain := make(chan struct{})
+	drainDone := make(chan struct{})
+	go func() {
+		defer close(drainDone)
+		for {
+			select {
+			case <-stopDrain:
+				return
+			case _, ok := <-drainSigs:
+				if !ok {
+					return
+				}
+			}
+		}
+	}()
+	var stopDrainOnce sync.Once
+	cleanupDrain := func() {
+		stopDrainOnce.Do(func() {
+			signal.Stop(drainSigs)
+			close(stopDrain)
+			<-drainDone
+		})
+	}
+	defer cleanupDrain()
 
 	if err := cmd.Start(); err != nil {
 		return 1, err
@@ -148,9 +183,12 @@ func runSupervisedSessionWithSignals(spec SupervisedSessionSpec, testSigs <-chan
 	}
 	close(stopForward)
 	<-forwardDone
+	cleanupDrain()
 
 	if haveForeground && origPgrp > 0 {
+		signal.Ignore(syscall.SIGTTOU)
 		_ = unix.IoctlSetPointerInt(ttyFD, unix.TIOCSPGRP, origPgrp)
+		signal.Reset(syscall.SIGTTOU)
 	}
 
 	if waitErr == nil {
@@ -170,10 +208,14 @@ func saveStateAsUser(acct *config.AccountInfo, lastSession string) error {
 	if acct == nil {
 		return fmt.Errorf("account info is required to save state")
 	}
-	if osGeteuid() != 0 || acct.UID == 0 {
+	if kernelGeteuid() != 0 || acct.UID == 0 {
 		return SaveStateFn(acct.HomeDir, lastSession, acct.UID)
 	}
 
+	cred, err := accountCredential(acct)
+	if err != nil {
+		return err
+	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable for unprivileged state write: %w", err)
@@ -186,7 +228,7 @@ func saveStateAsUser(acct *config.AccountInfo, lastSession string) error {
 		"GOCDM_STATE_UID=" + strconv.Itoa(acct.UID),
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: accountCredential(acct),
+		Credential: cred,
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -36,17 +36,21 @@ func prepareTTYForAccount(acct *config.AccountInfo) (TTYCleanup, string, error) 
 	}
 
 	vt := strings.TrimPrefix(ttyPath, "/dev/tty")
-	if osGeteuid() != 0 || acct == nil {
+	if kernelGeteuid() != 0 || acct == nil {
 		return noopTTYCleanup, vt, nil
 	}
 
+	fd := int(os.Stdin.Fd())
 	var st unix.Stat_t
-	if err := unix.Stat(ttyPath, &st); err != nil {
-		return noopTTYCleanup, vt, fmt.Errorf("stat tty %s: %w", ttyPath, err)
+	if err := unix.Fstat(fd, &st); err != nil {
+		return noopTTYCleanup, vt, fmt.Errorf("fstat tty fd %d (%s): %w", fd, ttyPath, err)
+	}
+	if (uint32(st.Mode) & uint32(unix.S_IFMT)) != uint32(unix.S_IFCHR) {
+		return noopTTYCleanup, vt, fmt.Errorf("stdin tty %s is not a character device", ttyPath)
 	}
 	origUID := int(st.Uid)
 	origGID := int(st.Gid)
-	origMode := os.FileMode(st.Mode) & os.ModePerm
+	origMode := uint32(st.Mode) & 0o7777
 
 	ttyGID := acct.GID
 	if grp, err := user.LookupGroup("tty"); err == nil {
@@ -55,12 +59,12 @@ func prepareTTYForAccount(acct *config.AccountInfo) (TTYCleanup, string, error) 
 		}
 	}
 
-	if err := os.Chown(ttyPath, acct.UID, ttyGID); err != nil {
-		return noopTTYCleanup, vt, fmt.Errorf("chown tty %s: %w", ttyPath, err)
+	if err := unix.Fchown(fd, acct.UID, ttyGID); err != nil {
+		return noopTTYCleanup, vt, fmt.Errorf("fchown tty %s: %w", ttyPath, err)
 	}
-	if err := os.Chmod(ttyPath, 0o620); err != nil {
-		_ = os.Chown(ttyPath, origUID, origGID)
-		return noopTTYCleanup, vt, fmt.Errorf("chmod tty %s: %w", ttyPath, err)
+	if err := unix.Fchmod(fd, 0o620); err != nil {
+		_ = unix.Fchown(fd, origUID, origGID)
+		return noopTTYCleanup, vt, fmt.Errorf("fchmod tty %s: %w", ttyPath, err)
 	}
 
 	var once sync.Once
@@ -68,8 +72,8 @@ func prepareTTYForAccount(acct *config.AccountInfo) (TTYCleanup, string, error) 
 		var restoreErr error
 		once.Do(func() {
 			restoreErr = errors.Join(
-				os.Chown(ttyPath, origUID, origGID),
-				os.Chmod(ttyPath, origMode),
+				unix.Fchown(fd, origUID, origGID),
+				unix.Fchmod(fd, origMode),
 			)
 		})
 		return restoreErr

@@ -7,10 +7,6 @@ import (
 	"syscall"
 )
 
-func newSysProcAttr() *syscall.SysProcAttr {
-	return newSysProcAttrWithCred(nil, nil, nil)
-}
-
 func newSysProcAttrWithCred(uid, gid *int, groups []int) *syscall.SysProcAttr {
 	attr := &syscall.SysProcAttr{Setsid: true}
 	if uid != nil && gid != nil && os.Geteuid() == 0 {

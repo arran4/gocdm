@@ -39,6 +39,10 @@ func TestSupervisorChildHelper(t *testing.T) {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
+	case "sigint":
+		_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
+		time.Sleep(5 * time.Second)
+		os.Exit(0)
 	case "waitterm":
 		readyFile := os.Getenv("SUPERVISOR_READY_FILE")
 		if readyFile != "" {
@@ -103,6 +107,14 @@ func TestRunSupervisedSessionChildLifecycle(t *testing.T) {
 		code, err := runSupervisedSession(spec)
 		if err != nil || code != 128+int(syscall.SIGTERM) {
 			t.Fatalf("got (%d, %v), want (%d, nil)", code, err, 128+int(syscall.SIGTERM))
+		}
+	})
+
+	t.Run("child keeps default SIGINT disposition (does not inherit SIG_IGN)", func(t *testing.T) {
+		spec, _ := makeSpec("sigint")
+		code, err := runSupervisedSession(spec)
+		if err != nil || code != 128+int(syscall.SIGINT) {
+			t.Fatalf("expected child SIGINT termination (%d), got (%d, %v)", 128+int(syscall.SIGINT), code, err)
 		}
 	})
 
@@ -391,5 +403,34 @@ func TestCompiledInternalSaveStateHelper(t *testing.T) {
 	state, err := config.LoadStateForUser(tmpHome, os.Geteuid())
 	if err != nil || state.LastSession != "zsh" {
 		t.Fatalf("expected saved state 'zsh', got (%+v, %v)", state, err)
+	}
+}
+
+func TestAccountCredentialFailClosedAsRoot(t *testing.T) {
+	origKernelEuid := kernelGeteuid
+	t.Cleanup(func() { kernelGeteuid = origKernelEuid })
+	kernelGeteuid = func() int { return 0 }
+
+	if _, err := accountCredential(nil); err == nil {
+		t.Fatal("expected error when running as root with nil AccountInfo")
+	}
+	if _, err := accountCredential(&config.AccountInfo{Username: "bad", UID: -1, GID: 1000}); err == nil {
+		t.Fatal("expected error when running as root with negative UID")
+	}
+	if _, err := accountCredential(&config.AccountInfo{Username: "bad", UID: 1000, GID: -1}); err == nil {
+		t.Fatal("expected error when running as root with negative GID")
+	}
+
+	cred, err := accountCredential(&config.AccountInfo{
+		Username: "alice",
+		UID:      1001,
+		GID:      1001,
+		Groups:   []int{1001, 27, 44},
+	})
+	if err != nil {
+		t.Fatalf("expected valid credential for non-negative root transition, got %v", err)
+	}
+	if cred == nil || cred.Uid != 1001 || cred.Gid != 1001 || !reflect.DeepEqual(cred.Groups, []uint32{1001, 27, 44}) {
+		t.Fatalf("unexpected credential: %+v", cred)
 	}
 }
