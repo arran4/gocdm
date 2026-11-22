@@ -422,8 +422,12 @@ func TestGettyLoginFailuresCloseSessionAndNeverFallbackToRootEnv(t *testing.T) {
 
 func TestUserSessionModePreservesInheritedEnvAndCWD(t *testing.T) {
 	setupGettyContextTestEnv(t)
-	osGetuid = func() int { return 1000 }
-	osGeteuid = func() int { return 1000 }
+	uid := os.Getuid()
+	if uid == 0 {
+		uid = 1000
+	}
+	osGetuid = func() int { return uid }
+	osGeteuid = func() int { return uid }
 
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
