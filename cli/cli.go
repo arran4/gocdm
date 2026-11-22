@@ -3,11 +3,13 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/arran4/gocdm/auth"
@@ -29,10 +31,16 @@ var ExecLookPath = exec.LookPath
 var DropPrivilegesFn = DropPrivileges
 var ExecProgramFn = ExecProgram
 var LaunchXSessionFn = x11.LaunchXSession
+var LaunchSupervisedXSessionFn = x11.LaunchXSessionWithOptions
 var DiscoverSessionsFn = session.DiscoverSessions
 var LookupAccountFn = config.LookupAccount
 var ChdirFn = os.Chdir
 var SaveStateFn = config.SafeSaveStateAt
+var SaveStateAsUserFn = saveStateAsUser
+var PrepareTTYFn = prepareTTYForAccount
+var RunSupervisedSessionFn = runSupervisedSession
+var NoticesStdout io.Writer = os.Stdout
+var NoticesStderr io.Writer = os.Stderr
 var osStat = os.Stat
 var osReadlink = os.Readlink
 
@@ -64,7 +72,35 @@ var debugEnvAllowlist = map[string]bool{
 	"XDG_VTNR":                 true,
 }
 
+func runInternalSaveState(exit func(int)) {
+	if osGeteuid() == 0 {
+		fmt.Fprintln(os.Stderr, "refusing internal state write as root")
+		exit(1)
+		return
+	}
+	home := os.Getenv("GOCDM_STATE_HOME")
+	sessionName := os.Getenv("GOCDM_STATE_SESSION")
+	uidStr := os.Getenv("GOCDM_STATE_UID")
+	uid, err := strconv.Atoi(uidStr)
+	if err != nil || uid <= 0 {
+		fmt.Fprintf(os.Stderr, "invalid internal state uid %q\n", uidStr)
+		exit(1)
+		return
+	}
+	if err := SaveStateFn(home, sessionName, uid); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to save state: %v\n", err)
+		exit(1)
+		return
+	}
+	exit(0)
+}
+
 func Run(args []string, exit func(int)) {
+	if os.Getenv("GOCDM_INTERNAL_SAVE_STATE") == "1" {
+		runInternalSaveState(exit)
+		return
+	}
+
 	fs := flag.NewFlagSet("gocdm", flag.ContinueOnError)
 	configPathFlag := fs.String("config", "", "Path to config file")
 	dryRun := fs.Bool("dry-run", false, "Dry run mode (print command instead of executing)")
@@ -173,7 +209,6 @@ func Run(args []string, exit func(int)) {
 			_ = password
 			if tuiErr != nil {
 				fmt.Fprintf(os.Stderr, "Authentication prompt failed or cancelled: %v\n", tuiErr)
-				closeLoginSession(loginSession)
 				exit(1)
 				return
 			}
@@ -191,6 +226,10 @@ func Run(args []string, exit func(int)) {
 					fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
 				}
 			}
+		}
+
+		if loginSession != nil && loginSession.Username() != "" {
+			promptedUser = loginSession.Username()
 		}
 
 		acct, err = LookupAccountFn(promptedUser, PasswdFilePath)
@@ -275,84 +314,90 @@ func Run(args []string, exit func(int)) {
 
 	selectedSession := sessions[selectedIdx]
 
-	prepareLaunchSession := func(stype string) ([]string, bool) {
-		var env []string
-		if isLoginMode {
-			if loginSession != nil {
-				if err := loginSession.OpenSession(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error: PAM open session failed: %v\n", err)
-					closeLoginSession(loginSession)
-					exit(1)
-					return nil, false
-				}
-			}
-
-			var pamEnv []string
-			if loginSession != nil {
-				pamEnv = loginSession.Env()
-			}
-
-			var envErr error
-			env, envErr = config.BuildGettySessionEnv(config.GettyEnvOptions{
-				LauncherEnv:   os.Environ(),
-				Account:       acct,
-				PamEnvFile:    PamEnvConfPath,
-				PamSessionEnv: pamEnv,
-				SessionType:   stype,
-				SessionName:   selectedSession.Name,
-				WorkingDir:    acct.HomeDir,
-				SpawnPID:      os.Getpid(),
-			})
-			if envErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: failed to build secure session environment: %v\n", envErr)
+	prepareGettySession := func(stype string) ([]string, string, TTYCleanup, bool) {
+		if loginSession != nil {
+			setPAMSessionMetadata(loginSession, stype, selectedSession.Name, detectCurrentVT())
+			if err := loginSession.OpenSession(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: PAM open session failed: %v\n", err)
 				closeLoginSession(loginSession)
 				exit(1)
-				return nil, false
+				return nil, "", noopTTYCleanup, false
 			}
+			auth.FlushNotices(loginSession.DrainNotices(), NoticesStdout, NoticesStderr)
+		}
 
-			if err := DropPrivilegesFn(acct.Username); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to switch user context: %v\n", err)
-				closeLoginSession(loginSession)
-				exit(1)
-				return nil, false
-			}
+		sessionCwd, cwdErr := resolveSessionCwd(acct.HomeDir)
+		if cwdErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to set working directory: %v\n", cwdErr)
+			closeLoginSession(loginSession)
+			exit(1)
+			return nil, "", noopTTYCleanup, false
+		}
 
-			sessionCwd, cwdErr := resolveAndChdir(acct.HomeDir, ChdirFn)
-			if cwdErr != nil {
-				fmt.Fprintf(os.Stderr, "Failed to set working directory: %v\n", cwdErr)
-				closeLoginSession(loginSession)
-				exit(1)
-				return nil, false
-			}
-			env = config.SetEnvValue(env, "PWD", sessionCwd)
+		var pamEnv []string
+		if loginSession != nil {
+			pamEnv = loginSession.Env()
+		}
+		env, envErr := config.BuildGettySessionEnv(config.GettyEnvOptions{
+			LauncherEnv:   os.Environ(),
+			Account:       acct,
+			PamEnvFile:    PamEnvConfPath,
+			PamSessionEnv: pamEnv,
+			SessionType:   stype,
+			SessionName:   selectedSession.Name,
+			WorkingDir:    sessionCwd,
+			SpawnPID:      os.Getpid(),
+		})
+		if envErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: failed to build secure session environment: %v\n", envErr)
+			closeLoginSession(loginSession)
+			exit(1)
+			return nil, "", noopTTYCleanup, false
+		}
 
-			if err := SaveStateFn(acct.HomeDir, selectedSession.Name, acct.UID); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
-			}
-		} else {
-			env = config.BuildUserSessionEnv(config.UserEnvOptions{
-				BaseEnv:     os.Environ(),
-				SessionType: stype,
-				SessionName: selectedSession.Name,
-				SpawnPID:    os.Getpid(),
-			})
-			if userHome != "" {
-				if err := SaveStateFn(userHome, selectedSession.Name, osGeteuid()); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
-				}
-			}
+		ttyCleanup, _, ttyErr := PrepareTTYFn(acct)
+		if ttyErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to prepare TTY for user: %v\n", ttyErr)
+			closeLoginSession(loginSession)
+			exit(1)
+			return nil, "", noopTTYCleanup, false
+		}
+		if ttyCleanup == nil {
+			ttyCleanup = noopTTYCleanup
+		}
+
+		if err := SaveStateAsUserFn(acct, selectedSession.Name); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
 		}
 
 		if *debugEnv {
 			fmt.Print(formatDebugEnv(env))
 		}
-		return env, true
+		return env, sessionCwd, ttyCleanup, true
+	}
+
+	prepareUserSession := func(stype string) []string {
+		env := config.BuildUserSessionEnv(config.UserEnvOptions{
+			BaseEnv:     os.Environ(),
+			SessionType: stype,
+			SessionName: selectedSession.Name,
+			SpawnPID:    os.Getpid(),
+		})
+		if userHome != "" {
+			if err := SaveStateFn(userHome, selectedSession.Name, osGeteuid()); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to save state: %v\n", err)
+			}
+		}
+		if *debugEnv {
+			fmt.Print(formatDebugEnv(env))
+		}
+		return env
 	}
 
 	flagVal := normalizeSessionType(selectedSession.Type)
 
 	switch flagVal {
-	case "W":
+	case "W", "C":
 		parts := strings.Fields(selectedSession.Exec)
 		if len(parts) == 0 {
 			fmt.Fprintln(os.Stderr, "Empty command")
@@ -363,11 +408,16 @@ func Run(args []string, exit func(int)) {
 		bin := parts[0]
 		cmdArgs := parts[1:]
 
+		label := "Wayland"
+		if flagVal == "C" {
+			label = "console"
+		}
 		if *dryRun {
-			fmt.Printf("Dry run: would execute Wayland program: %s %v\n", bin, cmdArgs)
+			fmt.Printf("Dry run: would execute %s program: %s %v\n", label, bin, cmdArgs)
 			closeLoginSession(loginSession)
 			return
 		}
+
 		binary, err := ExecLookPath(bin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
@@ -376,50 +426,37 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 
-		env, ok := prepareLaunchSession("W")
-		if !ok {
+		if isLoginMode {
+			env, sessionCwd, ttyCleanup, ok := prepareGettySession(flagVal)
+			if !ok {
+				return
+			}
+			code, runErr := RunSupervisedSessionFn(SupervisedSessionSpec{
+				Binary:  binary,
+				Args:    append([]string{bin}, cmdArgs...),
+				Env:     env,
+				Dir:     sessionCwd,
+				Account: acct,
+				Stdin:   os.Stdin,
+				Stdout:  os.Stdout,
+				Stderr:  os.Stderr,
+			})
+			if ttyErr := ttyCleanup(); ttyErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to restore TTY ownership: %v\n", ttyErr)
+			}
+			closeLoginSession(loginSession)
+			if runErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to run session: %v\n", runErr)
+				exit(1)
+				return
+			}
+			exit(code)
 			return
 		}
 
+		env := prepareUserSession(flagVal)
 		if err := ExecProgramFn(binary, append([]string{bin}, cmdArgs...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
-			closeLoginSession(loginSession)
-			exit(1)
-			return
-		}
-
-	case "C":
-		parts := strings.Fields(selectedSession.Exec)
-		if len(parts) == 0 {
-			fmt.Fprintln(os.Stderr, "Empty command")
-			closeLoginSession(loginSession)
-			exit(1)
-			return
-		}
-		bin := parts[0]
-		cmdArgs := parts[1:]
-
-		if *dryRun {
-			fmt.Printf("Dry run: would execute console program: %s %v\n", bin, cmdArgs)
-			closeLoginSession(loginSession)
-			return
-		}
-		binary, err := ExecLookPath(bin)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
-			closeLoginSession(loginSession)
-			exit(1)
-			return
-		}
-
-		env, ok := prepareLaunchSession("C")
-		if !ok {
-			return
-		}
-
-		if err := ExecProgramFn(binary, append([]string{bin}, cmdArgs...), env); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
-			closeLoginSession(loginSession)
 			exit(1)
 			return
 		}
@@ -501,15 +538,45 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 
-		env, ok := prepareLaunchSession("X")
-		if !ok {
+		if isLoginMode {
+			env, sessionCwd, ttyCleanup, ok := prepareGettySession("X")
+			if !ok {
+				return
+			}
+			uid := acct.UID
+			gid := acct.GID
+			err = LaunchSupervisedXSessionFn(x11.LaunchOptions{
+				Bin:        parts,
+				Display:    display,
+				VT:         vt,
+				ConsoleKit: cfg.ConsoleKit,
+				CKTimeout:  cfg.CKTimeout,
+				AltStartX:  cfg.AltStartX,
+				StartXLog:  cfg.StartXLog,
+				ServerArgs: cfg.ServerArgs,
+				Env:        env,
+				Dir:        sessionCwd,
+				UID:        &uid,
+				GID:        &gid,
+				Groups:     acct.Groups,
+			})
+			if ttyErr := ttyCleanup(); ttyErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to restore TTY ownership: %v\n", ttyErr)
+			}
+			closeLoginSession(loginSession)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
+				exit(1)
+				return
+			}
+			exit(0)
 			return
 		}
 
+		env := prepareUserSession("X")
 		err = LaunchXSessionFn(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
-			closeLoginSession(loginSession)
 			exit(1)
 			return
 		}
@@ -520,6 +587,54 @@ func Run(args []string, exit func(int)) {
 		exit(1)
 		return
 	}
+}
+
+func setPAMSessionMetadata(loginSession auth.LoginSession, stype, sname, vt string) {
+	if loginSession == nil {
+		return
+	}
+	var sessionType string
+	switch stype {
+	case "W":
+		sessionType = "wayland"
+	case "X":
+		sessionType = "x11"
+	case "C":
+		sessionType = "tty"
+	}
+	setOpt := func(k, v string) {
+		if v == "" {
+			return
+		}
+		if err := loginSession.SetEnv(k, v); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to set PAM variable %s: %v\n", k, err)
+		}
+	}
+	setOpt("XDG_SESSION_TYPE", sessionType)
+	setOpt("XDG_SESSION_CLASS", "user")
+	if (stype == "W" || stype == "X") && sname != "" {
+		setOpt("XDG_SESSION_DESKTOP", sname)
+	}
+	if vt != "" {
+		setOpt("XDG_VTNR", vt)
+		setOpt("XDG_SEAT", "seat0")
+	}
+}
+
+func resolveSessionCwd(homeDir string) (string, error) {
+	return resolveAndChdir(homeDir, func(dir string) error {
+		if dir == "/" {
+			return nil
+		}
+		info, err := osStat(dir)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%q is not a directory", dir)
+		}
+		return nil
+	})
 }
 
 func resolveSessions(cfg *config.Config, homeDir string) ([]session.Session, error) {
@@ -606,9 +721,9 @@ func formatDebugEnv(env []string) string {
 			continue
 		}
 		if debugEnvAllowlist[parts[0]] {
-			_, _ = fmt.Fprintf(&b, "%s\n", e)
+			fmt.Fprintf(&b, "%s\n", e)
 		} else {
-			_, _ = fmt.Fprintf(&b, "%s=[REDACTED]\n", parts[0])
+			fmt.Fprintf(&b, "%s=[REDACTED]\n", parts[0])
 		}
 	}
 	b.WriteString("-----------------\n")

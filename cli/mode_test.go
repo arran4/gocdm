@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/arran4/gocdm/auth"
+	"github.com/arran4/gocdm/config"
 )
 
 func TestParseModeFlag(t *testing.T) {
@@ -515,6 +516,9 @@ func TestRunGettyAutoDetectAuthenticatesOnce(t *testing.T) {
 	origExec := ExecProgramFn
 	origChdir := ChdirFn
 	origSaveState := SaveStateFn
+	origPrepareTTY := PrepareTTYFn
+	origRunSupervised := RunSupervisedSessionFn
+	origSaveStateAsUser := SaveStateAsUserFn
 	t.Cleanup(func() {
 		osReadlink = origReadlink
 		osStat = origStat
@@ -529,9 +533,14 @@ func TestRunGettyAutoDetectAuthenticatesOnce(t *testing.T) {
 		ExecProgramFn = origExec
 		ChdirFn = origChdir
 		SaveStateFn = origSaveState
+		PrepareTTYFn = origPrepareTTY
+		RunSupervisedSessionFn = origRunSupervised
+		SaveStateAsUserFn = origSaveStateAsUser
 	})
 	ChdirFn = func(dir string) error { return nil }
 	SaveStateFn = func(home, lastSession string, expectedUID int) error { return nil }
+	PrepareTTYFn = func(acct *config.AccountInfo) (TTYCleanup, string, error) { return noopTTYCleanup, "", nil }
+	SaveStateAsUserFn = func(acct *config.AccountInfo, lastSession string) error { return nil }
 
 	for _, k := range []string{
 		"DISPLAY", "WAYLAND_DISPLAY", "SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT",
@@ -568,14 +577,13 @@ func TestRunGettyAutoDetectAuthenticatesOnce(t *testing.T) {
 	ExecLookPath = func(file string) (string, error) { return "/usr/bin/" + file, nil }
 
 	var droppedUser string
-	DropPrivilegesFn = func(username string) error {
-		droppedUser = username
-		return nil
-	}
 	var execCalled bool
-	ExecProgramFn = func(binary string, args []string, env []string) error {
+	RunSupervisedSessionFn = func(spec SupervisedSessionSpec) (int, error) {
+		if spec.Account != nil {
+			droppedUser = spec.Account.Username
+		}
 		execCalled = true
-		return nil
+		return 0, nil
 	}
 
 	tmpDir := t.TempDir()
@@ -602,15 +610,21 @@ func TestRunGettyAutoDetectAuthenticatesOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	exited := false
+	code := -1
 	Run([]string{"-config", configPath}, func(c int) {
-		t.Fatalf("unexpected exit(%d)", c)
+		exited = true
+		code = c
 	})
 
+	if !exited || code != 0 {
+		t.Fatalf("expected exit(0) after supervised session, got exited=%v code=%d", exited, code)
+	}
 	if authCalls != 1 {
 		t.Fatalf("expected Authenticate to be called exactly once, got %d", authCalls)
 	}
 	if droppedUser != "demo" {
-		t.Fatalf("expected DropPrivilegesFn for demo, got %q", droppedUser)
+		t.Fatalf("expected supervised account for demo, got %q", droppedUser)
 	}
 	if !execCalled {
 		t.Fatal("expected session program to be executed")

@@ -146,6 +146,23 @@ func GetVT(xtty string, display int) (string, error) {
 	return strconv.Itoa(val + display), nil
 }
 
+// LaunchOptions configures X session launching and optional child credential drop/workdir.
+type LaunchOptions struct {
+	Bin        []string
+	Display    int
+	VT         string
+	ConsoleKit bool
+	CKTimeout  int
+	AltStartX  bool
+	StartXLog  string
+	ServerArgs []string
+	Env        []string
+	Dir        string
+	UID        *int
+	GID        *int
+	Groups     []int
+}
+
 // LaunchXSession launches the X session using startx.
 // bin: the command to execute (e.g., ["/usr/bin/xterm"]).
 // display: the X display number.
@@ -156,6 +173,30 @@ func GetVT(xtty string, display int) (string, error) {
 // startXLog: path to log file.
 // serverArgs: additional arguments for X server.
 func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTimeout int, altStartX bool, startXLog string, serverArgs []string, env []string) error {
+	return LaunchXSessionWithOptions(LaunchOptions{
+		Bin:        bin,
+		Display:    display,
+		VT:         vt,
+		ConsoleKit: consoleKit,
+		CKTimeout:  ckTimeout,
+		AltStartX:  altStartX,
+		StartXLog:  startXLog,
+		ServerArgs: serverArgs,
+		Env:        env,
+	})
+}
+
+// LaunchXSessionWithOptions launches an X session using the provided LaunchOptions.
+func LaunchXSessionWithOptions(opts LaunchOptions) error {
+	bin := opts.Bin
+	display := opts.Display
+	vt := opts.VT
+	consoleKit := opts.ConsoleKit
+	ckTimeout := opts.CKTimeout
+	altStartX := opts.AltStartX
+	startXLog := opts.StartXLog
+	serverArgs := opts.ServerArgs
+	env := opts.Env
 	if len(bin) == 0 {
 		return fmt.Errorf("session command cannot be empty")
 	}
@@ -209,7 +250,10 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	cmdArgs = append(cmdArgs, xArgs...)
 
 	cmd := osExec.Command("startx", cmdArgs...)
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = newSysProcAttrWithCred(opts.UID, opts.GID, opts.Groups)
+	if opts.Dir != "" {
+		cmd.Dir = opts.Dir
+	}
 	if len(env) > 0 {
 		cmd.Env = append([]string{}, env...)
 	}
