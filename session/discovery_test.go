@@ -238,3 +238,83 @@ func TestStripFreedesktopExecVariables(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoverSkipsEmptyHomeAndPrivilegedSymlinks(t *testing.T) {
+	tmpDir := t.TempDir()
+	testCommand := setupPathExecutable(t, tmpDir)
+
+	// Put a .xinitrc inside a temporary CWD and verify Discover("") never reads it.
+	cwdDir := filepath.Join(tmpDir, "cwd")
+	if err := os.MkdirAll(cwdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwdDir, ".xinitrc"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(cwdDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	origX11 := X11SessionsDir
+	origXSessions := XSessionsDir
+	origWayland := WaylandSessionsDir
+	X11SessionsDir = filepath.Join(tmpDir, "empty-x11")
+	XSessionsDir = filepath.Join(tmpDir, "empty-xsessions")
+	WaylandSessionsDir = filepath.Join(tmpDir, "empty-wayland")
+	t.Cleanup(func() {
+		X11SessionsDir = origX11
+		XSessionsDir = origXSessions
+		WaylandSessionsDir = origWayland
+	})
+
+	d := NewDiscoverer()
+	d.OpenShells = func(string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("")), nil
+	}
+
+	sessions, err := d.Discover("")
+	if err != nil {
+		t.Fatalf("Discover(\"\") failed: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected no sessions when home is empty, got %+v", sessions)
+	}
+
+	// Privileged symlink test: symlinked .xinitrc and .desktop under user home are skipped when euid==0.
+	userHome := filepath.Join(tmpDir, "alice")
+	userWayland := filepath.Join(userHome, ".config", "wayland-sessions")
+	if err := os.MkdirAll(userWayland, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realTarget := filepath.Join(tmpDir, "target.sh")
+	if err := os.WriteFile(realTarget, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realTarget, filepath.Join(userHome, ".xinitrc")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	realDesktop := filepath.Join(tmpDir, "evil.desktop")
+	if err := os.WriteFile(realDesktop, []byte("[Desktop Entry]\nName=Evil\nExec="+testCommand+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realDesktop, filepath.Join(userWayland, "evil.desktop")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	origEuid := discoveryGeteuid
+	discoveryGeteuid = func() int { return 0 }
+	t.Cleanup(func() { discoveryGeteuid = origEuid })
+
+	sessions, err = d.Discover(userHome)
+	if err != nil {
+		t.Fatalf("Discover(userHome) failed: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected privileged symlinked user sessions to be skipped, got %+v", sessions)
+	}
+}

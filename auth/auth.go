@@ -10,13 +10,53 @@ import (
 	"golang.org/x/term"
 )
 
-// Authenticator validates user credentials.
+// NoticeStyle classifies informational or error messages produced by PAM conversation callbacks.
+type NoticeStyle int
+
+const (
+	NoticeInfo NoticeStyle = iota
+	NoticeError
+)
+
+// Notice represents a single informational or error message emitted during PAM stages.
+type Notice struct {
+	Style NoticeStyle
+	Text  string
+}
+
+// FlushNotices writes buffered PAM notices to stdout/stderr without altering internal whitespace
+// (such as MOTD formatting), skipping empty/whitespace-only entries.
+func FlushNotices(notices []Notice, stdout, stderr io.Writer) {
+	for _, n := range notices {
+		if strings.TrimSpace(n.Text) == "" {
+			continue
+		}
+		out := stdout
+		if n.Style == NoticeError {
+			out = stderr
+		}
+		if out == nil {
+			continue
+		}
+		if strings.HasSuffix(n.Text, "\n") {
+			_, _ = fmt.Fprint(out, n.Text)
+		} else {
+			_, _ = fmt.Fprintln(out, n.Text)
+		}
+	}
+}
+
+// LoginSession represents an authenticated PAM transaction lifecycle.
 type LoginSession interface {
+	Username() string
+	SetEnv(key, value string) error
 	OpenSession() error
 	Env() []string
+	DrainNotices() []Notice
 	CloseSession() error
 }
 
+// Authenticator validates user credentials.
 type Authenticator interface {
 	Authenticate(username, password string) (LoginSession, error)
 }
