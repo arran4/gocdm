@@ -56,7 +56,7 @@ func SafeReadUserFile(homeDir, relPath string, expectedUID int, allowRootOwned b
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, maxSafeUserFileSize+1))
 	if err != nil {
 		return nil, err

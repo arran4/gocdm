@@ -101,7 +101,7 @@ func SafeReadUserFile(homeDir, relPath string, expectedUID int, allowRootOwned b
 	}
 
 	f := os.NewFile(uintptr(fileFD), fullPath)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := unix.Fstat(fileFD, &st); err != nil {
 		return nil, &os.PathError{Op: "stat", Path: fullPath, Err: err}

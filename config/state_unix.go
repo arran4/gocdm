@@ -18,7 +18,7 @@ func safeSaveStatePlatform(home string, data []byte, expectedUID int) error {
 	if err != nil {
 		return &os.PathError{Op: "open", Path: home, Err: err}
 	}
-	defer unix.Close(homeFD)
+	defer func() { _ = unix.Close(homeFD) }()
 
 	var st unix.Stat_t
 	if err := unix.Fstat(homeFD, &st); err != nil {
@@ -35,13 +35,13 @@ func safeSaveStatePlatform(home string, data []byte, expectedUID int) error {
 	if err != nil {
 		return err
 	}
-	defer unix.Close(cfgFD)
+	defer func() { _ = unix.Close(cfgFD) }()
 
 	gocdmFD, err := ensureSubdirNoFollow(cfgFD, "gocdm", 0o700, expectedUID, home)
 	if err != nil {
 		return err
 	}
-	defer unix.Close(gocdmFD)
+	defer func() { _ = unix.Close(gocdmFD) }()
 
 	statePath := filepath.Join(home, ".config", "gocdm", "state.json")
 	if err := unix.Fstatat(gocdmFD, "state.json", &st, unix.AT_SYMLINK_NOFOLLOW); err == nil {

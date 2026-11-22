@@ -173,6 +173,7 @@ func Run(args []string, exit func(int)) {
 			_ = password
 			if tuiErr != nil {
 				fmt.Fprintf(os.Stderr, "Authentication prompt failed or cancelled: %v\n", tuiErr)
+				closeLoginSession(loginSession)
 				exit(1)
 				return
 			}
@@ -364,6 +365,7 @@ func Run(args []string, exit func(int)) {
 
 		if *dryRun {
 			fmt.Printf("Dry run: would execute Wayland program: %s %v\n", bin, cmdArgs)
+			closeLoginSession(loginSession)
 			return
 		}
 		binary, err := ExecLookPath(bin)
@@ -399,6 +401,7 @@ func Run(args []string, exit func(int)) {
 
 		if *dryRun {
 			fmt.Printf("Dry run: would execute console program: %s %v\n", bin, cmdArgs)
+			closeLoginSession(loginSession)
 			return
 		}
 		binary, err := ExecLookPath(bin)
@@ -446,6 +449,7 @@ func Run(args []string, exit func(int)) {
 
 			if *dryRun {
 				fmt.Printf("Dry run: would switch to existing X session on display :%d VT%s\n", cfg.Display, vt)
+				closeLoginSession(loginSession)
 				return
 			}
 
@@ -493,6 +497,7 @@ func Run(args []string, exit func(int)) {
 		if *dryRun {
 			fmt.Printf("Dry run: would launch X session: %v on display :%d VT%s\n", parts, display, vt)
 			fmt.Printf("X server args: %v\n", cfg.ServerArgs)
+			closeLoginSession(loginSession)
 			return
 		}
 
@@ -601,9 +606,9 @@ func formatDebugEnv(env []string) string {
 			continue
 		}
 		if debugEnvAllowlist[parts[0]] {
-			fmt.Fprintf(&b, "%s\n", e)
+			_, _ = fmt.Fprintf(&b, "%s\n", e)
 		} else {
-			fmt.Fprintf(&b, "%s=[REDACTED]\n", parts[0])
+			_, _ = fmt.Fprintf(&b, "%s=[REDACTED]\n", parts[0])
 		}
 	}
 	b.WriteString("-----------------\n")
