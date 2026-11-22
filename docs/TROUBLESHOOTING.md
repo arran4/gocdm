@@ -1,5 +1,23 @@
 # Troubleshooting
 
+## `direct getty login mode (-login) requires root privileges`
+
+Cause: `-login` or `-mode=login` was invoked by an unprivileged user without `-dry-run`.
+
+Fix: omit `-login` or pass `-mode=user` when launching GoCDM from an already-authenticated user shell (`~/.profile` / `profile.sh`). Use `-login` only when GoCDM replaces `getty` as root (e.g., `getty@tty1.service`).
+
+## `direct getty login mode (-login) cannot run inside an active graphical session` / `inside an SSH session`
+
+Cause: `-login` or `-mode=login` was invoked when `DISPLAY`, `WAYLAND_DISPLAY`, `SSH_TTY`, `SSH_CONNECTION`, or `SSH_CLIENT` was set.
+
+Fix: use `-mode=user` (or omit `-login`) inside existing sessions; reserve `-login` for direct console/getty ownership.
+
+## `conflicting mode flags` / `invalid -mode`
+
+Cause: contradictory flags were supplied (such as `-login -mode=user` or `-login=false -mode=login`) or `-mode` was given an unrecognized value.
+
+Fix: specify one consistent mode (`-mode=auto`, `-mode=login`/`getty`, or `-mode=user`/`autostart`).
+
 ## `gocdm must be launched from an interactive TTY`
 
 Cause: launched from non-interactive shell/session.

@@ -14,8 +14,8 @@ import (
 
 type mockLoginSession struct{}
 
-func (m mockLoginSession) OpenSession() error { return nil }
-func (m mockLoginSession) Env() []string { return nil }
+func (m mockLoginSession) OpenSession() error  { return nil }
+func (m mockLoginSession) Env() []string       { return nil }
 func (m mockLoginSession) CloseSession() error { return nil }
 
 type mockAuthenticator struct {
@@ -275,6 +275,19 @@ func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	mockEnvFiles(t)
 	mockUnsupported(t)
+	origGetuid := osGetuid
+	origGeteuid := osGeteuid
+	osGetuid = func() int { return 0 }
+	osGeteuid = func() int { return 0 }
+	t.Cleanup(func() {
+		osGetuid = origGetuid
+		osGeteuid = origGeteuid
+	})
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "")
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("SSH_CONNECTION", "")
+	t.Setenv("SSH_CLIENT", "")
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
 	origTuiPromptCredentials := TuiPromptCredentials
@@ -505,6 +518,7 @@ func TestRunConsoleEmptyCommand(t *testing.T) {
 			t.Errorf("cleanup failed: %v", err)
 		}
 	})
+	t.Setenv("HOME", tmpDir)
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("")
 namelist=("Empty")
