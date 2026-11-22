@@ -50,6 +50,10 @@ func DropPrivileges(username string) error {
 		gids = append(gids, ig)
 	}
 
+	if len(gids) == 0 {
+		gids = []int{gid}
+	}
+
 	if err := syscall.Setgroups(gids); err != nil {
 		return fmt.Errorf("setgroups %v: %w", gids, err)
 	}
@@ -58,6 +62,10 @@ func DropPrivileges(username string) error {
 	}
 	if err := syscall.Setuid(uid); err != nil {
 		return fmt.Errorf("setuid %d: %w", uid, err)
+	}
+	if os.Getegid() != gid || os.Geteuid() != uid {
+		return fmt.Errorf("privilege drop verification failed: got uid=%d euid=%d gid=%d egid=%d, want uid=%d gid=%d",
+			os.Getuid(), os.Geteuid(), os.Getgid(), os.Getegid(), uid, gid)
 	}
 	return nil
 }

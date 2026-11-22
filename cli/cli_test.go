@@ -14,8 +14,8 @@ import (
 
 type mockLoginSession struct{}
 
-func (m mockLoginSession) OpenSession() error { return nil }
-func (m mockLoginSession) Env() []string { return nil }
+func (m mockLoginSession) OpenSession() error  { return nil }
+func (m mockLoginSession) Env() []string       { return nil }
 func (m mockLoginSession) CloseSession() error { return nil }
 
 type mockAuthenticator struct {
@@ -275,6 +275,19 @@ func TestRunLoginModeAuthenticationFailure(t *testing.T) {
 func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	mockEnvFiles(t)
 	mockUnsupported(t)
+	origGetuid := osGetuid
+	origGeteuid := osGeteuid
+	osGetuid = func() int { return 0 }
+	osGeteuid = func() int { return 0 }
+	t.Cleanup(func() {
+		osGetuid = origGetuid
+		osGeteuid = origGeteuid
+	})
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "")
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("SSH_CONNECTION", "")
+	t.Setenv("SSH_CLIENT", "")
 	origNewAuthenticator := NewAuthenticator
 	origPromptCredentials := PromptCredentials
 	origTuiPromptCredentials := TuiPromptCredentials
@@ -282,6 +295,8 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 	origExecLookPath := ExecLookPath
 	origDropPrivilegesFn := DropPrivilegesFn
 	origExecProgramFn := ExecProgramFn
+	origChdirFn := ChdirFn
+	origSaveStateFn := SaveStateFn
 	defer func() {
 		NewAuthenticator = origNewAuthenticator
 		PromptCredentials = origPromptCredentials
@@ -290,7 +305,11 @@ func TestRunLoginModeConsoleIntegrationHarness(t *testing.T) {
 		ExecLookPath = origExecLookPath
 		DropPrivilegesFn = origDropPrivilegesFn
 		ExecProgramFn = origExecProgramFn
+		ChdirFn = origChdirFn
+		SaveStateFn = origSaveStateFn
 	}()
+	ChdirFn = func(dir string) error { return nil }
+	SaveStateFn = func(home, lastSession string, expectedUID int) error { return nil }
 	NewAuthenticator = func(service string) auth.Authenticator { return mockAuthenticator{} }
 	PromptCredentials = func(in io.Reader, out io.Writer) (string, string, error) { return "demo", "secret", nil }
 	TuiPromptCredentials = func(title, theme, version string, authFunc func(string, string) error) (string, string, error) {
@@ -505,6 +524,7 @@ func TestRunConsoleEmptyCommand(t *testing.T) {
 			t.Errorf("cleanup failed: %v", err)
 		}
 	})
+	t.Setenv("HOME", tmpDir)
 	configPath := tmpDir + "/cdmrc"
 	content := `binlist=("")
 namelist=("Empty")
