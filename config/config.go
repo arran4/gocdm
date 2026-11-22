@@ -15,19 +15,20 @@ import (
 var SystemConfigPath = "/etc/cdmrc"
 
 type Config struct {
-	DialogRC   string
-	CountFrom  int
-	Display    int
-	XTTY       string // "keep" or number
-	LockTTY    bool
-	ConsoleKit bool
-	CKTimeout  int
-	AltStartX  bool
-	StartXLog  string
-	BinList    []string
-	NameList   []string
-	FlagList   []string
-	ServerArgs []string
+	DialogRC           string
+	CountFrom          int
+	Display            int
+	XTTY               string // "keep" or number
+	LockTTY            bool
+	ConsoleKit         bool
+	ConsoleKitExplicit bool
+	CKTimeout          int
+	AltStartX          bool
+	StartXLog          string
+	BinList            []string
+	NameList           []string
+	FlagList           []string
+	ServerArgs         []string
 }
 
 func DiscoverConfigPath() string {
@@ -177,6 +178,7 @@ func parseConfigReader(r io.Reader, cfg *Config) error {
 			cfg.LockTTY = parseBool(trimShellQuotes(value))
 		case "consolekit":
 			cfg.ConsoleKit = parseBool(trimShellQuotes(value))
+			cfg.ConsoleKitExplicit = true
 		case "cktimeout":
 			if v, err := strconv.Atoi(trimShellQuotes(value)); err == nil {
 				cfg.CKTimeout = v
@@ -231,6 +233,11 @@ func parseShellArray(value string) ([]string, error) {
 		return []string{}, nil
 	}
 	return shellSplit(inner)
+}
+
+// SplitCommand parses a shell-quoted command string into argv tokens without invoking a shell.
+func SplitCommand(s string) ([]string, error) {
+	return shellSplit(s)
 }
 
 func shellSplit(s string) ([]string, error) {

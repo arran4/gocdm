@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Plasma (Wayland)
+Comment=Plasma by KDE
+DesktopNames=KDE
+TryExec=startplasma-wayland
+Exec=startplasma-wayland %u
+
+[Desktop Action new-window]
+Name=Wrong Action Name
+Exec=/bin/false
+DesktopNames=WRONG

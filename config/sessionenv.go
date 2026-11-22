@@ -33,22 +33,26 @@ var localeEnvAllowlist = []string{
 
 // GettyEnvOptions configures deterministic session environment construction in getty login mode.
 type GettyEnvOptions struct {
-	LauncherEnv   []string
-	Account       *AccountInfo
-	PamEnvFile    string
-	PamSessionEnv []string
-	SessionType   string // "W", "X", or "C"
-	SessionName   string
-	WorkingDir    string
-	SpawnPID      int
+	LauncherEnv    []string
+	Account        *AccountInfo
+	PamEnvFile     string
+	PamSessionEnv  []string
+	SessionType    string // "W", "X", or "C"
+	SessionName    string
+	DesktopSession string
+	CurrentDesktop string
+	WorkingDir     string
+	SpawnPID       int
 }
 
 // UserEnvOptions configures environment updates in already-authenticated user session mode.
 type UserEnvOptions struct {
-	BaseEnv     []string
-	SessionType string // "W", "X", or "C"
-	SessionName string
-	SpawnPID    int
+	BaseEnv        []string
+	SessionType    string // "W", "X", or "C"
+	SessionName    string
+	DesktopSession string
+	CurrentDesktop string
+	SpawnPID       int
 }
 
 // BuildGettySessionEnv builds an isolated session environment for an authenticated user in direct getty mode.
@@ -110,7 +114,7 @@ func BuildGettySessionEnv(opts GettyEnvOptions) ([]string, error) {
 		envMap["SHELL"] = shell
 	}
 
-	applySessionTypeEnv(envMap, opts.SessionType, opts.SessionName)
+	applySessionTypeEnv(envMap, opts.SessionType, opts.SessionName, opts.DesktopSession, opts.CurrentDesktop)
 
 	pwd := opts.WorkingDir
 	if pwd == "" {
@@ -130,7 +134,7 @@ func BuildGettySessionEnv(opts GettyEnvOptions) ([]string, error) {
 // BuildUserSessionEnv enriches an already-authenticated user environment with session metadata.
 func BuildUserSessionEnv(opts UserEnvOptions) []string {
 	envMap := EnvSliceToMap(opts.BaseEnv)
-	applySessionTypeEnv(envMap, opts.SessionType, opts.SessionName)
+	applySessionTypeEnv(envMap, opts.SessionType, opts.SessionName, opts.DesktopSession, opts.CurrentDesktop)
 	if opts.SpawnPID > 0 {
 		envMap["GOCDM_SPAWN"] = strconv.Itoa(opts.SpawnPID)
 	}
@@ -144,30 +148,39 @@ func SetEnvValue(env []string, key, value string) []string {
 	return EnvMapToSlice(envMap)
 }
 
-func applySessionTypeEnv(envMap map[string]string, sessionType, sessionName string) {
+func applySessionTypeEnv(envMap map[string]string, sessionType, sessionName, desktopSession, currentDesktop string) {
 	stype := strings.ToUpper(strings.TrimSpace(sessionType))
 	switch {
 	case strings.HasPrefix(stype, "W"):
 		envMap["XDG_SESSION_TYPE"] = "wayland"
 		envMap["XDG_SESSION_CLASS"] = "user"
-		setDesktopEnvVars(envMap, sessionName)
+		setDesktopEnvVars(envMap, sessionName, desktopSession, currentDesktop)
 	case strings.HasPrefix(stype, "X"):
 		envMap["XDG_SESSION_TYPE"] = "x11"
 		envMap["XDG_SESSION_CLASS"] = "user"
-		setDesktopEnvVars(envMap, sessionName)
+		setDesktopEnvVars(envMap, sessionName, desktopSession, currentDesktop)
 	case strings.HasPrefix(stype, "C"):
 		envMap["XDG_SESSION_TYPE"] = "tty"
 		envMap["XDG_SESSION_CLASS"] = "user"
 	}
 }
 
-func setDesktopEnvVars(envMap map[string]string, sessionName string) {
-	if sessionName == "" {
-		return
+func setDesktopEnvVars(envMap map[string]string, sessionName, desktopSession, currentDesktop string) {
+	sessDesktop := desktopSession
+	if sessDesktop == "" {
+		sessDesktop = sessionName
 	}
-	envMap["XDG_SESSION_DESKTOP"] = sessionName
-	envMap["DESKTOP_SESSION"] = sessionName
-	envMap["XDG_CURRENT_DESKTOP"] = sessionName
+	curDesktop := currentDesktop
+	if curDesktop == "" {
+		curDesktop = sessDesktop
+	}
+	if sessDesktop != "" {
+		envMap["XDG_SESSION_DESKTOP"] = sessDesktop
+		envMap["DESKTOP_SESSION"] = sessDesktop
+	}
+	if curDesktop != "" {
+		envMap["XDG_CURRENT_DESKTOP"] = curDesktop
+	}
 }
 
 // BuildSessionEnv enriches baseEnv with user identity from passwdFile and optional

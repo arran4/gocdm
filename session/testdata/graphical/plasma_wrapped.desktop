@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Plasma (Wayland)
+DesktopNames=KDE;
+TryExec=/usr/bin/startplasma-wayland
+Exec=/usr/libexec/plasma-dbus-run-session-if-needed /usr/bin/startplasma-wayland

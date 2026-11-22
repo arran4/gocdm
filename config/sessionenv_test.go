@@ -313,6 +313,30 @@ func TestBuildGettySessionEnvTrustBoundary(t *testing.T) {
 		}
 	})
 
+	t.Run("maps explicit DesktopSession and CurrentDesktop separately without fabricating runtime vars", func(t *testing.T) {
+		env, err := BuildGettySessionEnv(GettyEnvOptions{
+			LauncherEnv:    launcherEnv,
+			Account:        acct,
+			SessionType:    "W",
+			SessionName:    "Plasma (Wayland)",
+			DesktopSession: "plasma",
+			CurrentDesktop: "KDE",
+			WorkingDir:     "/home/alice",
+		})
+		if err != nil {
+			t.Fatalf("BuildGettySessionEnv failed: %v", err)
+		}
+		envMap := EnvSliceToMap(env)
+		if envMap["XDG_SESSION_DESKTOP"] != "plasma" || envMap["DESKTOP_SESSION"] != "plasma" || envMap["XDG_CURRENT_DESKTOP"] != "KDE" {
+			t.Fatalf("unexpected desktop vars: %v", envMap)
+		}
+		for _, forbidden := range []string{"XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "XAUTHORITY"} {
+			if _, ok := envMap[forbidden]; ok {
+				t.Fatalf("must not fabricate %s when PAM/session did not set it", forbidden)
+			}
+		}
+	})
+
 	t.Run("errors on nil account or unreadable pam_env path", func(t *testing.T) {
 		if _, err := BuildGettySessionEnv(GettyEnvOptions{}); err == nil {
 			t.Fatal("expected error for nil Account")
@@ -328,10 +352,12 @@ func TestBuildGettySessionEnvTrustBoundary(t *testing.T) {
 
 func TestBuildUserSessionEnv(t *testing.T) {
 	env := BuildUserSessionEnv(UserEnvOptions{
-		BaseEnv:     []string{"USER=alice", "CUSTOM_VAR=kept"},
-		SessionType: "X",
-		SessionName: "i3",
-		SpawnPID:    99,
+		BaseEnv:        []string{"USER=alice", "CUSTOM_VAR=kept"},
+		SessionType:    "X",
+		SessionName:    "Xfce Session",
+		DesktopSession: "xfce",
+		CurrentDesktop: "XFCE:GTK",
+		SpawnPID:       99,
 	})
 	envMap := EnvSliceToMap(env)
 	if envMap["CUSTOM_VAR"] != "kept" {
@@ -340,7 +366,7 @@ func TestBuildUserSessionEnv(t *testing.T) {
 	if _, ok := envMap["XDG_RUNTIME_DIR"]; ok {
 		t.Fatal("must not fabricate XDG_RUNTIME_DIR")
 	}
-	if envMap["XDG_SESSION_TYPE"] != "x11" || envMap["DESKTOP_SESSION"] != "i3" || envMap["GOCDM_SPAWN"] != "99" {
+	if envMap["XDG_SESSION_TYPE"] != "x11" || envMap["DESKTOP_SESSION"] != "xfce" || envMap["XDG_SESSION_DESKTOP"] != "xfce" || envMap["XDG_CURRENT_DESKTOP"] != "XFCE:GTK" || envMap["GOCDM_SPAWN"] != "99" {
 		t.Fatalf("unexpected session metadata: %v", envMap)
 	}
 }

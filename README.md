@@ -202,8 +202,9 @@ This keeps behavior intentional on non-Linux/BSD targets instead of failing late
 
 ### Session path status
 
-- Console (`C`) and Wayland (`W`) entries execute configured commands directly.
-- X (`X`) supports both existing-session VT handoff (`locktty`) and new-session launch (`startx` path).
+- Console (`C`) entries execute configured commands or login shells; Wayland (`W`) entries launch shell-free directly or via detected Plasma wrapper (`plasma-dbus-run-session-if-needed`) without double-wrapping.
+- X (`X`) supports both existing-session VT handoff (`locktty`) and new-session launch (`startx` path) with quoted `.desktop` `Exec=` arguments preserved shell-free.
+- In modern PAM/logind environments (`XDG_SESSION_ID` set), GoCDM automatically skips legacy `ck-launch-session` unless `consolekit=yes` is explicitly configured in `cdmrc`, and skips redundant `chvt` when `xtty=keep` targets the current VT.
 
 ### Intentional differences from legacy shell flow
 
@@ -228,9 +229,11 @@ This keeps behavior intentional on non-Linux/BSD targets instead of failing late
   - guide: `docs/SESSION_DISCOVERY_EDGECASES.md`
 
 
-## Wayland integration
+## Graphical / Wayland integration
 
-For compositor/session startup guidance where Wayland behavior differs from X-session assumptions, see `docs/WAYLAND_INTEGRATION.md`.
+GoCDM populates `XDG_SESSION_TYPE`, `XDG_SESSION_CLASS`, `XDG_SESSION_DESKTOP`, `DESKTOP_SESSION`, `XDG_CURRENT_DESKTOP` (from `.desktop` `DesktopNames=` and desktop ID), `XDG_VTNR`, and `XDG_SEAT` consistently with PAM/logind, without fabricating `XDG_RUNTIME_DIR` or `DBUS_SESSION_BUS_ADDRESS` and without sourcing interactive shell profiles during graphical launch.
+
+See `docs/WAYLAND_INTEGRATION.md` for details on KDE Plasma Wayland wrappers, X11 logind/`consolekit`/`xtty=keep` behavior, and spare-VT manual test steps.
 
 
 ## Config parsing and precedence

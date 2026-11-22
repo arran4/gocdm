@@ -209,6 +209,7 @@ func Run(args []string, exit func(int)) {
 			_ = password
 			if tuiErr != nil {
 				fmt.Fprintf(os.Stderr, "Authentication prompt failed or cancelled: %v\n", tuiErr)
+				closeLoginSession(loginSession)
 				exit(1)
 				return
 			}
@@ -313,10 +314,14 @@ func Run(args []string, exit func(int)) {
 	}
 
 	selectedSession := sessions[selectedIdx]
+	desktopSession, currentDesktop := ResolveDesktopMetadata(selectedSession)
 
-	prepareGettySession := func(stype string) ([]string, string, TTYCleanup, bool) {
+	prepareGettySession := func(stype, sessionVT string) ([]string, string, TTYCleanup, bool) {
+		if sessionVT == "" {
+			sessionVT = detectCurrentVT()
+		}
 		if loginSession != nil {
-			setPAMSessionMetadata(loginSession, stype, selectedSession.Name, detectCurrentVT())
+			setPAMSessionMetadata(loginSession, stype, desktopSession, currentDesktop, sessionVT)
 			if err := loginSession.OpenSession(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: PAM open session failed: %v\n", err)
 				closeLoginSession(loginSession)
@@ -339,14 +344,16 @@ func Run(args []string, exit func(int)) {
 			pamEnv = loginSession.Env()
 		}
 		env, envErr := config.BuildGettySessionEnv(config.GettyEnvOptions{
-			LauncherEnv:   os.Environ(),
-			Account:       acct,
-			PamEnvFile:    PamEnvConfPath,
-			PamSessionEnv: pamEnv,
-			SessionType:   stype,
-			SessionName:   selectedSession.Name,
-			WorkingDir:    sessionCwd,
-			SpawnPID:      os.Getpid(),
+			LauncherEnv:    os.Environ(),
+			Account:        acct,
+			PamEnvFile:     PamEnvConfPath,
+			PamSessionEnv:  pamEnv,
+			SessionType:    stype,
+			SessionName:    selectedSession.Name,
+			DesktopSession: desktopSession,
+			CurrentDesktop: currentDesktop,
+			WorkingDir:     sessionCwd,
+			SpawnPID:       os.Getpid(),
 		})
 		if envErr != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to build secure session environment: %v\n", envErr)
@@ -378,10 +385,12 @@ func Run(args []string, exit func(int)) {
 
 	prepareUserSession := func(stype string) []string {
 		env := config.BuildUserSessionEnv(config.UserEnvOptions{
-			BaseEnv:     os.Environ(),
-			SessionType: stype,
-			SessionName: selectedSession.Name,
-			SpawnPID:    os.Getpid(),
+			BaseEnv:        os.Environ(),
+			SessionType:    stype,
+			SessionName:    selectedSession.Name,
+			DesktopSession: desktopSession,
+			CurrentDesktop: currentDesktop,
+			SpawnPID:       os.Getpid(),
 		})
 		if userHome != "" {
 			if err := SaveStateFn(userHome, selectedSession.Name, osGeteuid()); err != nil {
@@ -397,10 +406,10 @@ func Run(args []string, exit func(int)) {
 	flagVal := normalizeSessionType(selectedSession.Type)
 
 	switch flagVal {
-	case "W", "C":
-		parts := strings.Fields(selectedSession.Exec)
-		if len(parts) == 0 {
-			fmt.Fprintln(os.Stderr, "Empty command")
+	case "W":
+		parts, parseErr := ParseGraphicalExec(selectedSession.Exec)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "Invalid Wayland session command: %v\n", parseErr)
 			closeLoginSession(loginSession)
 			exit(1)
 			return
@@ -408,12 +417,8 @@ func Run(args []string, exit func(int)) {
 		bin := parts[0]
 		cmdArgs := parts[1:]
 
-		label := "Wayland"
-		if flagVal == "C" {
-			label = "console"
-		}
 		if *dryRun {
-			fmt.Printf("Dry run: would execute %s program: %s %v\n", label, bin, cmdArgs)
+			fmt.Printf("Dry run: would execute Wayland program: %s %v\n", bin, cmdArgs)
 			closeLoginSession(loginSession)
 			return
 		}
@@ -427,7 +432,7 @@ func Run(args []string, exit func(int)) {
 		}
 
 		if isLoginMode {
-			env, sessionCwd, ttyCleanup, ok := prepareGettySession(flagVal)
+			env, sessionCwd, ttyCleanup, ok := prepareGettySession("W", detectCurrentVT())
 			if !ok {
 				return
 			}
@@ -454,7 +459,67 @@ func Run(args []string, exit func(int)) {
 			return
 		}
 
-		env := prepareUserSession(flagVal)
+		env := prepareUserSession("W")
+		if err := ExecProgramFn(binary, append([]string{bin}, cmdArgs...), env); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
+			exit(1)
+			return
+		}
+
+	case "C":
+		parts := strings.Fields(selectedSession.Exec)
+		if len(parts) == 0 {
+			fmt.Fprintln(os.Stderr, "Empty command")
+			closeLoginSession(loginSession)
+			exit(1)
+			return
+		}
+		bin := parts[0]
+		cmdArgs := parts[1:]
+
+		if *dryRun {
+			fmt.Printf("Dry run: would execute console program: %s %v\n", bin, cmdArgs)
+			closeLoginSession(loginSession)
+			return
+		}
+
+		binary, err := ExecLookPath(bin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Command not found: %s\n", bin)
+			closeLoginSession(loginSession)
+			exit(1)
+			return
+		}
+
+		if isLoginMode {
+			env, sessionCwd, ttyCleanup, ok := prepareGettySession("C", detectCurrentVT())
+			if !ok {
+				return
+			}
+			code, runErr := RunSupervisedSessionFn(SupervisedSessionSpec{
+				Binary:  binary,
+				Args:    append([]string{bin}, cmdArgs...),
+				Env:     env,
+				Dir:     sessionCwd,
+				Account: acct,
+				Stdin:   os.Stdin,
+				Stdout:  os.Stdout,
+				Stderr:  os.Stderr,
+			})
+			if ttyErr := ttyCleanup(); ttyErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to restore TTY ownership: %v\n", ttyErr)
+			}
+			closeLoginSession(loginSession)
+			if runErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to run session: %v\n", runErr)
+				exit(1)
+				return
+			}
+			exit(code)
+			return
+		}
+
+		env := prepareUserSession("C")
 		if err := ExecProgramFn(binary, append([]string{bin}, cmdArgs...), env); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to exec: %v\n", err)
 			exit(1)
@@ -529,7 +594,13 @@ func Run(args []string, exit func(int)) {
 			}
 		}
 
-		parts := strings.Fields(selectedSession.Exec)
+		parts, parseErr := ParseGraphicalExec(selectedSession.Exec)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "Invalid X session command: %v\n", parseErr)
+			closeLoginSession(loginSession)
+			exit(1)
+			return
+		}
 
 		if *dryRun {
 			fmt.Printf("Dry run: would launch X session: %v on display :%d VT%s\n", parts, display, vt)
@@ -539,17 +610,20 @@ func Run(args []string, exit func(int)) {
 		}
 
 		if isLoginMode {
-			env, sessionCwd, ttyCleanup, ok := prepareGettySession("X")
+			currentVT := detectCurrentVT()
+			env, sessionCwd, ttyCleanup, ok := prepareGettySession("X", vt)
 			if !ok {
 				return
 			}
+			useConsoleKit := ResolveUseConsoleKit(cfg, env)
 			uid := acct.UID
 			gid := acct.GID
 			err = LaunchSupervisedXSessionFn(x11.LaunchOptions{
 				Bin:        parts,
 				Display:    display,
 				VT:         vt,
-				ConsoleKit: cfg.ConsoleKit,
+				CurrentVT:  currentVT,
+				ConsoleKit: useConsoleKit,
 				CKTimeout:  cfg.CKTimeout,
 				AltStartX:  cfg.AltStartX,
 				StartXLog:  cfg.StartXLog,
@@ -574,7 +648,8 @@ func Run(args []string, exit func(int)) {
 		}
 
 		env := prepareUserSession("X")
-		err = LaunchXSessionFn(parts, display, vt, cfg.ConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, env)
+		useConsoleKit := ResolveUseConsoleKit(cfg, env)
+		err = LaunchXSessionFn(parts, display, vt, useConsoleKit, cfg.CKTimeout, cfg.AltStartX, cfg.StartXLog, cfg.ServerArgs, env)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to launch X session: %v\n", err)
 			exit(1)
@@ -589,7 +664,7 @@ func Run(args []string, exit func(int)) {
 	}
 }
 
-func setPAMSessionMetadata(loginSession auth.LoginSession, stype, sname, vt string) {
+func setPAMSessionMetadata(loginSession auth.LoginSession, stype, desktopSession, currentDesktop, vt string) {
 	if loginSession == nil {
 		return
 	}
@@ -612,8 +687,9 @@ func setPAMSessionMetadata(loginSession auth.LoginSession, stype, sname, vt stri
 	}
 	setOpt("XDG_SESSION_TYPE", sessionType)
 	setOpt("XDG_SESSION_CLASS", "user")
-	if (stype == "W" || stype == "X") && sname != "" {
-		setOpt("XDG_SESSION_DESKTOP", sname)
+	if stype == "W" || stype == "X" {
+		setOpt("XDG_SESSION_DESKTOP", desktopSession)
+		setOpt("XDG_CURRENT_DESKTOP", currentDesktop)
 	}
 	if vt != "" {
 		setOpt("XDG_VTNR", vt)
@@ -721,9 +797,9 @@ func formatDebugEnv(env []string) string {
 			continue
 		}
 		if debugEnvAllowlist[parts[0]] {
-			fmt.Fprintf(&b, "%s\n", e)
+			_, _ = fmt.Fprintf(&b, "%s\n", e)
 		} else {
-			fmt.Fprintf(&b, "%s=[REDACTED]\n", parts[0])
+			_, _ = fmt.Fprintf(&b, "%s=[REDACTED]\n", parts[0])
 		}
 	}
 	b.WriteString("-----------------\n")

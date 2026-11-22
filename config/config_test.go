@@ -43,19 +43,20 @@ serverargs=("-a" "-b")
 	}
 
 	expected := &Config{
-		DialogRC:   "/tmp/dialogrc",
-		CountFrom:  1,
-		Display:    1,
-		XTTY:       "8",
-		LockTTY:    true,
-		ConsoleKit: false,
-		CKTimeout:  60,
-		AltStartX:  true,
-		StartXLog:  "/tmp/log",
-		BinList:    []string{"a", "b"},
-		NameList:   []string{"A", "B"},
-		FlagList:   []string{"X", "C"},
-		ServerArgs: []string{"-a", "-b"},
+		DialogRC:           "/tmp/dialogrc",
+		CountFrom:          1,
+		Display:            1,
+		XTTY:               "8",
+		LockTTY:            true,
+		ConsoleKit:         false,
+		ConsoleKitExplicit: true,
+		CKTimeout:          60,
+		AltStartX:          true,
+		StartXLog:          "/tmp/log",
+		BinList:            []string{"a", "b"},
+		NameList:           []string{"A", "B"},
+		FlagList:           []string{"X", "C"},
+		ServerArgs:         []string{"-a", "-b"},
 	}
 
 	if !reflect.DeepEqual(cfg, expected) {
@@ -85,6 +86,9 @@ countfrom=1
 
 	if cfg.CountFrom != 1 {
 		t.Errorf("Expected CountFrom 1, got %d", cfg.CountFrom)
+	}
+	if cfg.ConsoleKitExplicit {
+		t.Errorf("Expected ConsoleKitExplicit false when consolekit is omitted")
 	}
 }
 

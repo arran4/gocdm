@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/arran4/gocdm/config"
 )
 
 var (
@@ -28,10 +30,12 @@ func RegisterPostParseDesktopHook(hook func(string, *Discoverer) string) {
 }
 
 type Session struct {
-	Name string
-	Exec string
-	Type string // "X", "C", or "W" (Wayland)
-	Path string
+	Name         string
+	Exec         string
+	Type         string // "X", "C", or "W" (Wayland)
+	Path         string
+	DesktopID    string
+	DesktopNames []string
 }
 
 type Discoverer struct {
@@ -345,10 +349,23 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 	defer file.Close()
 
 	var execCmd, name, tryExec string
+	var desktopNames []string
+	var hidden, noDisplay bool
+	sawSection := false
+	inDesktopEntry := false
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			sawSection = true
+			inDesktopEntry = line == "[Desktop Entry]"
+			continue
+		}
+		if sawSection && !inDesktopEntry {
 			continue
 		}
 		parts := strings.SplitN(line, "=", 2)
@@ -366,7 +383,22 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 			name = value
 		case strings.HasPrefix(key, "Name[") && strings.HasSuffix(key, "]") && name == "":
 			name = value
+		case key == "DesktopNames":
+			desktopNames = desktopNames[:0]
+			for _, part := range strings.Split(value, ";") {
+				if trimmed := strings.TrimSpace(part); trimmed != "" {
+					desktopNames = append(desktopNames, trimmed)
+				}
+			}
+		case key == "Hidden":
+			hidden = strings.EqualFold(value, "true")
+		case key == "NoDisplay":
+			noDisplay = strings.EqualFold(value, "true")
 		}
+	}
+
+	if hidden || noDisplay {
+		return Session{}, fmt.Errorf("session %q is hidden", path)
 	}
 
 	if execCmd == "" || name == "" {
@@ -390,7 +422,10 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 	// Some Exec lines are complex, e.g. "gnome-session --session=gnome"
 	// We only check the first token.
 	if tryExec == "" {
-		cmdParts := strings.Fields(execCmd)
+		cmdParts, splitErr := config.SplitCommand(execCmd)
+		if splitErr != nil {
+			cmdParts = strings.Fields(execCmd)
+		}
 		if len(cmdParts) > 0 {
 			bin := cmdParts[0]
 			// Only check if it's an absolute path or in PATH
@@ -402,9 +437,11 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 	}
 
 	return Session{
-		Name: name,
-		Exec: execCmd,
-		Type: defaultType,
-		Path: path,
+		Name:         name,
+		Exec:         execCmd,
+		Type:         defaultType,
+		Path:         path,
+		DesktopID:    strings.TrimSuffix(filepath.Base(path), ".desktop"),
+		DesktopNames: desktopNames,
 	}, nil
 }

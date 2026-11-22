@@ -151,6 +151,7 @@ type LaunchOptions struct {
 	Bin        []string
 	Display    int
 	VT         string
+	CurrentVT  string
 	ConsoleKit bool
 	CKTimeout  int
 	AltStartX  bool
@@ -188,6 +189,10 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 
 // LaunchXSessionWithOptions launches an X session using the provided LaunchOptions.
 func LaunchXSessionWithOptions(opts LaunchOptions) error {
+	return launchXSessionWithSignals(opts, nil)
+}
+
+func launchXSessionWithSignals(opts LaunchOptions, testSigs <-chan os.Signal) error {
 	bin := opts.Bin
 	display := opts.Display
 	vt := opts.VT
@@ -221,8 +226,11 @@ func LaunchXSessionWithOptions(opts LaunchOptions) error {
 	if consoleKit && ckTimeout != 30 {
 		return fmt.Errorf("ckTimeout is deprecated and not supported; set cktimeout=30")
 	}
-	if err := ensureTool("chvt"); err != nil {
-		return err
+	needVTSwitch := opts.CurrentVT == "" || opts.CurrentVT != vt
+	if needVTSwitch {
+		if err := ensureTool("chvt"); err != nil {
+			return err
+		}
 	}
 	if err := ensureTool("startx"); err != nil {
 		return err
@@ -233,8 +241,10 @@ func LaunchXSessionWithOptions(opts LaunchOptions) error {
 		}
 	}
 
-	if err := SwitchVT(vt); err != nil {
-		return fmt.Errorf("failed VT handoff before launching X session: %w", err)
+	if needVTSwitch {
+		if err := SwitchVT(vt); err != nil {
+			return fmt.Errorf("failed VT handoff before launching X session: %w", err)
+		}
 	}
 
 	xArgs := []string{fmt.Sprintf(":%d", display)}
@@ -264,11 +274,11 @@ func LaunchXSessionWithOptions(opts LaunchOptions) error {
 		}
 	}
 
-	outfile, err := os.OpenFile(startXLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	outfile, err := openStartXLog(startXLog)
 	if err != nil {
-		return fmt.Errorf("failed to open log file %s: %w", startXLog, err)
+		return err
 	}
-	defer outfile.Close()
+	defer func() { _ = outfile.Close() }()
 	cmd.Stdout = outfile
 	cmd.Stderr = outfile
 
@@ -276,19 +286,38 @@ func LaunchXSessionWithOptions(opts LaunchOptions) error {
 		return fmt.Errorf("failed to start session: %w", err)
 	}
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	var sigCh chan os.Signal
+	var forwardSrc <-chan os.Signal
+	if testSigs != nil {
+		forwardSrc = testSigs
+	} else {
+		sigCh = make(chan os.Signal, 4)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		forwardSrc = sigCh
+	}
 
+	stopForward := make(chan struct{})
+	forwardDone := make(chan struct{})
 	go func() {
-		for sig := range sigs {
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
+		defer close(forwardDone)
+		for {
+			select {
+			case <-stopForward:
+				return
+			case sig, ok := <-forwardSrc:
+				if !ok {
+					return
+				}
+				signalProcessGroup(cmd.Process, sig)
 			}
 		}
 	}()
 
 	err = cmd.Wait()
-	signal.Stop(sigs)
-	close(sigs)
+	if sigCh != nil {
+		signal.Stop(sigCh)
+	}
+	close(stopForward)
+	<-forwardDone
 	return err
 }
