@@ -18,6 +18,22 @@ To autostart gocdm when you log in your account, copy the content of
 /usr/share/doc/gocdm/profile.sh to the tail of your shell profile (~/.profile,
 etc.).
 
+## Operating modes
+
+GoCDM supports two distinct operating modes:
+
+1. **Direct getty replacement (`-login` or `-mode=login` / `-mode=getty`)**: GoCDM runs as a root-owned login manager directly on a virtual terminal, authenticates credentials once via PAM, and drops privileges to the authenticated user before launching the chosen session.
+2. **Post-login user autostart (`-mode=user` / `-mode=autostart` or `-login=false`)**: An already-authenticated user launches GoCDM after a normal shell login (for example from `~/.profile` or `profile.sh`). GoCDM displays the session menu and launches the chosen session without prompting for PAM authentication again.
+
+### Mode selection and auto-detection (`-mode`)
+
+* `-mode=auto` (default): Selects direct getty login mode only when GoCDM is running with real and effective UID `0`, both stdin and stdout are attached to the same `/dev/ttyN` character device, Linux audit `loginuid` is unset (when available), and no active session markers are set (`DISPLAY`, `WAYLAND_DISPLAY`, `SSH_TTY`, `SSH_CONNECTION`, `SSH_CLIENT`, `XDG_SESSION_ID`, `GOCDM_SPAWN`, `SHLVL`, `USER`, `LOGNAME`, `SUDO_USER`, `DOAS_USER`). Otherwise it defaults to already-authenticated user session mode.
+* `-mode=login` (or `-mode=getty`, `-login`): Forces direct getty login mode. Requires `euid == 0` (unless `-dry-run` is specified) and refuses to run inside an existing graphical (`DISPLAY`/`WAYLAND_DISPLAY`) or SSH session.
+* `-mode=user` (or `-mode=autostart`, `-login=false`): Forces already-authenticated user session mode with no PAM authentication prompt.
+* Combining conflicting explicit flags such as `-login -mode=user` or `-login=false -mode=login` fails with exit status `2`.
+
+> **Migration note (from v0.0.26):** Earlier releases inferred `-login` whenever `DISPLAY` was unset and a `/dev/ttyN` descriptor was open, which could mistakenly prompt already-authenticated users for PAM credentials again during `~/.profile` autostart on `tty1`. In `-mode=auto`, post-`login(1)` shells on `tty1` now stay in user session mode. Passing `-login` explicitly in `getty@tty1.service` and `-mode=user` (or bare `gocdm`) in profile autostart is recommended.
+
 ## Using GoCDM as a getty replacement (Login Manager)
 
 GoCDM can run in login-manager mode with native username/password prompts and PAM authentication.
@@ -38,7 +54,7 @@ go build -tags nopam -o gocdm-nopam ./cmd/gocdm
 sudo install -m 0755 gocdm-nopam /usr/local/bin/gocdm
 ```
 
-In login mode, GoCDM authenticates credentials through PAM, prepares a sanitized session environment (`HOME`, `SHELL`, `USER`, `LOGNAME`, plus `/etc/security/pam_env.conf`), and drops privileges to the authenticated account before launching the selected session.
+In login mode, GoCDM authenticates credentials through PAM, resolves the canonical account via NSS/`/etc/passwd` before loading user configuration/sessions/state, constructs a minimal sanitized session environment (`USER`, `LOGNAME`, `HOME`, `SHELL`, safe `PATH`, allowlisted `TERM`/locale, `/etc/security/pam_env.conf`, and authoritative PAM-supplied environment such as `pam_systemd` `XDG_RUNTIME_DIR` without fabricating missing runtime/D-Bus values), drops privileges to the authenticated account, changes the working directory to the user's home (or `/` with a warning if unavailable), and writes `~/.config/gocdm/state.json` safely as the authenticated user before launching the selected session.
 
 ### RC/profile autostart setup (user session)
 
@@ -46,7 +62,7 @@ If you want GoCDM to start after a normal shell login, append this to `~/.profil
 
 ```sh
 if [ -z "${DISPLAY:-}" ] && [ "$(tty)" = "/dev/tty1" ]; then
-  exec /usr/local/bin/gocdm
+  exec /usr/local/bin/gocdm -mode=user
 fi
 ```
 
@@ -121,9 +137,16 @@ Always release returned strings with `GoCDMFreeCString`.
 #### Threat model summary (`-login`)
 
 * Credentials are read only at interactive prompt time and sent directly to PAM for validation.
-* On successful authentication, GoCDM derives a session environment from user identity (`/etc/passwd`) and `/etc/security/pam_env.conf` values.
-* Privilege transitions are explicit: `-login` uses PAM auth first, then drops privileges to the authenticated account before launching session executables.
+* Pre-login configuration only reads explicit `-config`/`RCFILE` or `/etc/cdmrc` (never the launching root user's `~/.cdmrc`). User config, session discovery, and last-session state are resolved only after authentication against the authenticated account.
+* On successful authentication, GoCDM constructs the session environment from a minimal allowlisted base (`TERM` and locale/TZ variables) rather than inheriting the privileged launcher environment wholesale, then applies canonical identity (`USER`, `LOGNAME`, `HOME`, `SHELL`), safe `PATH`, `/etc/security/pam_env.conf`, and authoritative PAM session variables (such as `pam_systemd` values) without fabricating `XDG_RUNTIME_DIR` or `DBUS_SESSION_BUS_ADDRESS`.
+* Privilege transitions are explicit: `-login` follows the full PAM lifecycle (`pam_authenticate` -> `pam_acct_mgmt` -> `pam_setcred(ESTABLISH)` -> `pam_open_session`), flushes PAM notices/MOTD once (relying exclusively on PAM without duplicating `/etc/motd`), persists state via an unprivileged helper, runs a per-VT parent/child supervisor in `ModeGettyLogin` (forwarding `SIGTERM`/`SIGHUP` to the child process group while resetting child interactive signal dispositions such as `SIGINT` to `SIG_DFL`), drops credentials (`UID`/`GID`/supplementary groups) in the child, performs `fstat`/`fchown`/`fchmod` TTY handoff, and restores TTY ownership/permissions + foreground process group + `pam_close_session` / `pam_setcred(DELETE)` / `pam_end` on logout (leaving `ModeUserSession` supervisor-free with direct `exec`).
 * `-login` should be run from a real TTY (the binary rejects non-interactive launch unless `-dry-run` is used).
+
+##### Opt-in spare-VT validation (PAM lifecycle & MOTD)
+
+Leave `tty1` untouched as a recovery console and configure only a spare VT (e.g. `getty@tty2.service`) with `ExecStart=-/usr/local/bin/gocdm -login`:
+1. Switch to `tty2`, log in with a test account, and verify configured PAM notices/MOTD appear once and `loginctl session-status` shows an active `user` class session on `seat0`/`tty2` (redact secrets if inspecting logs).
+2. Exit the session and verify from the recovery VT via `loginctl list-sessions` that the closed session was removed cleanly and a subsequent login on `tty2` gets a fresh session and single MOTD.
 
 #### PAM requirements
 
@@ -146,7 +169,8 @@ If PAM support is missing at build time, authentication fails with a clear error
 * Authentication prompt failure (stdin/stdout not usable): exits with error `Authentication prompt failed: ...`.
 * PAM authentication failure (wrong password/policy denial/service failure): exits with error `Authentication failed: ...`.
 * Non-interactive launch without `-dry-run`: exits with `gocdm must be launched from an interactive TTY`.
-* If secure session environment assembly fails, GoCDM prints a warning and falls back to inherited environment.
+* If secure session environment assembly fails in `-login` mode, GoCDM closes the PAM session and exits with `Error: failed to build secure session environment: ...` instead of falling back to the privileged launcher environment.
+* If the authenticated user's home directory is missing or inaccessible, GoCDM warns and falls back to `/` as the working directory. State persistence under `~/.config/gocdm/state.json` refuses symlinks and reports legacy root-owned state files diagnostically without calling `chown`.
 
 ## Platform support matrix
 
@@ -178,8 +202,9 @@ This keeps behavior intentional on non-Linux/BSD targets instead of failing late
 
 ### Session path status
 
-- Console (`C`) and Wayland (`W`) entries execute configured commands directly.
-- X (`X`) supports both existing-session VT handoff (`locktty`) and new-session launch (`startx` path).
+- Console (`C`) entries execute configured commands or login shells; Wayland (`W`) entries launch shell-free directly or via detected Plasma wrapper (`plasma-dbus-run-session-if-needed`) without double-wrapping.
+- X (`X`) supports both existing-session VT handoff (`locktty`) and new-session launch (`startx` path) with quoted `.desktop` `Exec=` arguments preserved shell-free.
+- In modern PAM/logind environments (`XDG_SESSION_ID` set), GoCDM automatically skips legacy `ck-launch-session` unless `consolekit=yes` is explicitly configured in `cdmrc`, and skips redundant `chvt` when `xtty=keep` targets the current VT.
 
 ### Intentional differences from legacy shell flow
 
@@ -204,9 +229,11 @@ This keeps behavior intentional on non-Linux/BSD targets instead of failing late
   - guide: `docs/SESSION_DISCOVERY_EDGECASES.md`
 
 
-## Wayland integration
+## Graphical / Wayland integration
 
-For compositor/session startup guidance where Wayland behavior differs from X-session assumptions, see `docs/WAYLAND_INTEGRATION.md`.
+GoCDM populates `XDG_SESSION_TYPE`, `XDG_SESSION_CLASS`, `XDG_SESSION_DESKTOP`, `DESKTOP_SESSION`, `XDG_CURRENT_DESKTOP` (from `.desktop` `DesktopNames=` and desktop ID), `XDG_VTNR`, and `XDG_SEAT` consistently with PAM/logind, without fabricating `XDG_RUNTIME_DIR` or `DBUS_SESSION_BUS_ADDRESS` and without sourcing interactive shell profiles during graphical launch.
+
+See `docs/WAYLAND_INTEGRATION.md` for details on KDE Plasma Wayland wrappers, X11 logind/`consolekit`/`xtty=keep` behavior, and spare-VT manual test steps.
 
 
 ## Config parsing and precedence

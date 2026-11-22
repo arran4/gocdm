@@ -146,6 +146,24 @@ func GetVT(xtty string, display int) (string, error) {
 	return strconv.Itoa(val + display), nil
 }
 
+// LaunchOptions configures X session launching and optional child credential drop/workdir.
+type LaunchOptions struct {
+	Bin        []string
+	Display    int
+	VT         string
+	CurrentVT  string
+	ConsoleKit bool
+	CKTimeout  int
+	AltStartX  bool
+	StartXLog  string
+	ServerArgs []string
+	Env        []string
+	Dir        string
+	UID        *int
+	GID        *int
+	Groups     []int
+}
+
 // LaunchXSession launches the X session using startx.
 // bin: the command to execute (e.g., ["/usr/bin/xterm"]).
 // display: the X display number.
@@ -156,6 +174,34 @@ func GetVT(xtty string, display int) (string, error) {
 // startXLog: path to log file.
 // serverArgs: additional arguments for X server.
 func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTimeout int, altStartX bool, startXLog string, serverArgs []string, env []string) error {
+	return LaunchXSessionWithOptions(LaunchOptions{
+		Bin:        bin,
+		Display:    display,
+		VT:         vt,
+		ConsoleKit: consoleKit,
+		CKTimeout:  ckTimeout,
+		AltStartX:  altStartX,
+		StartXLog:  startXLog,
+		ServerArgs: serverArgs,
+		Env:        env,
+	})
+}
+
+// LaunchXSessionWithOptions launches an X session using the provided LaunchOptions.
+func LaunchXSessionWithOptions(opts LaunchOptions) error {
+	return launchXSessionWithSignals(opts, nil)
+}
+
+func launchXSessionWithSignals(opts LaunchOptions, testSigs <-chan os.Signal) error {
+	bin := opts.Bin
+	display := opts.Display
+	vt := opts.VT
+	consoleKit := opts.ConsoleKit
+	ckTimeout := opts.CKTimeout
+	altStartX := opts.AltStartX
+	startXLog := opts.StartXLog
+	serverArgs := opts.ServerArgs
+	env := opts.Env
 	if len(bin) == 0 {
 		return fmt.Errorf("session command cannot be empty")
 	}
@@ -180,8 +226,11 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	if consoleKit && ckTimeout != 30 {
 		return fmt.Errorf("ckTimeout is deprecated and not supported; set cktimeout=30")
 	}
-	if err := ensureTool("chvt"); err != nil {
-		return err
+	needVTSwitch := opts.CurrentVT == "" || opts.CurrentVT != vt
+	if needVTSwitch {
+		if err := ensureTool("chvt"); err != nil {
+			return err
+		}
 	}
 	if err := ensureTool("startx"); err != nil {
 		return err
@@ -192,8 +241,10 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 		}
 	}
 
-	if err := SwitchVT(vt); err != nil {
-		return fmt.Errorf("failed VT handoff before launching X session: %w", err)
+	if needVTSwitch {
+		if err := SwitchVT(vt); err != nil {
+			return fmt.Errorf("failed VT handoff before launching X session: %w", err)
+		}
 	}
 
 	xArgs := []string{fmt.Sprintf(":%d", display)}
@@ -209,7 +260,10 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 	cmdArgs = append(cmdArgs, xArgs...)
 
 	cmd := osExec.Command("startx", cmdArgs...)
-	cmd.SysProcAttr = newSysProcAttr()
+	cmd.SysProcAttr = newSysProcAttrWithCred(opts.UID, opts.GID, opts.Groups)
+	if opts.Dir != "" {
+		cmd.Dir = opts.Dir
+	}
 	if len(env) > 0 {
 		cmd.Env = append([]string{}, env...)
 	}
@@ -220,11 +274,11 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 		}
 	}
 
-	outfile, err := os.OpenFile(startXLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	outfile, err := openStartXLog(startXLog)
 	if err != nil {
-		return fmt.Errorf("failed to open log file %s: %w", startXLog, err)
+		return err
 	}
-	defer outfile.Close()
+	defer func() { _ = outfile.Close() }()
 	cmd.Stdout = outfile
 	cmd.Stderr = outfile
 
@@ -232,19 +286,38 @@ func LaunchXSession(bin []string, display int, vt string, consoleKit bool, ckTim
 		return fmt.Errorf("failed to start session: %w", err)
 	}
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	var sigCh chan os.Signal
+	var forwardSrc <-chan os.Signal
+	if testSigs != nil {
+		forwardSrc = testSigs
+	} else {
+		sigCh = make(chan os.Signal, 4)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		forwardSrc = sigCh
+	}
 
+	stopForward := make(chan struct{})
+	forwardDone := make(chan struct{})
 	go func() {
-		for sig := range sigs {
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
+		defer close(forwardDone)
+		for {
+			select {
+			case <-stopForward:
+				return
+			case sig, ok := <-forwardSrc:
+				if !ok {
+					return
+				}
+				signalProcessGroup(cmd.Process, sig)
 			}
 		}
 	}()
 
 	err = cmd.Wait()
-	signal.Stop(sigs)
-	close(sigs)
+	if sigCh != nil {
+		signal.Stop(sigCh)
+	}
+	close(stopForward)
+	<-forwardDone
 	return err
 }

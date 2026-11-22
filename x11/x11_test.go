@@ -2,11 +2,26 @@ package x11
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+type mockCharDeviceInfo struct {
+	name string
+	mode fs.FileMode
+}
+
+func (m mockCharDeviceInfo) Name() string       { return m.name }
+func (m mockCharDeviceInfo) Size() int64        { return 0 }
+func (m mockCharDeviceInfo) Mode() fs.FileMode  { return m.mode }
+func (m mockCharDeviceInfo) ModTime() time.Time { return time.Time{} }
+func (m mockCharDeviceInfo) IsDir() bool        { return false }
+func (m mockCharDeviceInfo) Sys() any           { return nil }
 
 type mockExecProxy struct {
 	commandFn  func(name string, arg ...string) *exec.Cmd
@@ -88,8 +103,18 @@ func TestHelperProcess(t *testing.T) {
 
 func TestGetVT(t *testing.T) {
 	origExec := osExec
-	defer func() { osExec = origExec }()
+	origStat := osStat
+	t.Cleanup(func() {
+		osExec = origExec
+		osStat = origStat
+	})
 	osExec = mockExecProxy{commandFn: helperCommand}
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == "/dev/tty1" {
+			return mockCharDeviceInfo{name: "tty1", mode: os.ModeCharDevice}, nil
+		}
+		return origStat(name)
+	}
 
 	vt, err := GetVT("keep", 0)
 	if err != nil {
@@ -189,7 +214,10 @@ func TestLaunchXSessionMissingTool(t *testing.T) {
 		},
 	}
 
-	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "test.log")
+
+	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, logPath, nil, nil)
 	if err == nil {
 		t.Fatal("expected missing startx error")
 	}
@@ -200,7 +228,8 @@ func TestLaunchXSessionAltStartXDeprecated(t *testing.T) {
 	defer func() { osExec = origExec }()
 	osExec = mockExecProxy{commandFn: helperCommand}
 
-	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, true, "/tmp/test.log", nil, nil)
+	logPath := filepath.Join(t.TempDir(), "test.log")
+	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, true, logPath, nil, nil)
 	if err == nil {
 		t.Fatal("expected altStartX deprecation error")
 	}
@@ -211,7 +240,8 @@ func TestLaunchXSessionCKTimeoutDeprecated(t *testing.T) {
 	defer func() { osExec = origExec }()
 	osExec = mockExecProxy{commandFn: helperCommand}
 
-	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", true, 60, false, "/tmp/test.log", nil, nil)
+	logPath := filepath.Join(t.TempDir(), "test.log")
+	err := LaunchXSession([]string{"/bin/sh"}, 1, "8", true, 60, false, logPath, nil, nil)
 	if err == nil {
 		t.Fatal("expected ckTimeout deprecation error")
 	}
@@ -238,17 +268,25 @@ func TestLaunchXSessionInvalidLogPath(t *testing.T) {
 		}
 	}
 
-	// Verify valid paths pass validation. To do this, we need to mock out other LaunchXSession checks
-	// like vt handoff, but for just validating the log path, we can rely on standard setup.
+	tmpDir := t.TempDir()
+	origWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWD) })
+
+	// Verify valid paths pass validation inside an isolated temp working directory.
 	validPaths := []string{
 		"/dev/null",
-		"/tmp/test.log",
+		filepath.Join(tmpDir, "test.log"),
 		"my..file.log",
 		"valid.log",
 	}
 
 	for _, p := range validPaths {
-		// Mock os.OpenFile failure or success doesn't matter, we just care that it DOES NOT return the "path traversal" error
 		err := LaunchXSession([]string{"/bin/sh"}, 1, "8", false, 30, false, p, []string{"-nolisten", "tcp"}, nil)
 		if err != nil && strings.Contains(err.Error(), "path traversal is not allowed") {
 			t.Fatalf("expected LaunchXSession to NOT fail with path traversal error for valid path %q, got: %v", p, err)
@@ -260,7 +298,7 @@ func TestLaunchXSessionEmptyBin(t *testing.T) {
 	origExec := osExec
 	defer func() { osExec = origExec }()
 	osExec = mockExecProxy{commandFn: helperCommand}
-	err := LaunchXSession([]string{}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	err := LaunchXSession([]string{}, 1, "8", false, 30, false, filepath.Join(t.TempDir(), "test.log"), nil, nil)
 	if err == nil {
 		t.Fatal("expected error when session command is empty")
 	}
@@ -274,7 +312,7 @@ func TestLaunchXSessionIllegalArguments(t *testing.T) {
 	defer func() { osExec = origExec }()
 	osExec = mockExecProxy{commandFn: helperCommand}
 
-	err := LaunchXSession([]string{"my-wm", "--", "malicious-arg"}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	err := LaunchXSession([]string{"my-wm", "--", "malicious-arg"}, 1, "8", false, 30, false, filepath.Join(t.TempDir(), "test.log"), nil, nil)
 	if err == nil {
 		t.Fatal("expected error when session command contains '--'")
 	}
@@ -296,8 +334,67 @@ func TestLaunchXSessionUnresolvedBinary(t *testing.T) {
 		},
 	}
 
-	err := LaunchXSession([]string{"nonexistent-wm"}, 1, "8", false, 30, false, "/tmp/test.log", nil, nil)
+	err := LaunchXSession([]string{"nonexistent-wm"}, 1, "8", false, 30, false, filepath.Join(t.TempDir(), "test.log"), nil, nil)
 	if err == nil {
 		t.Fatal("expected error when session binary cannot be resolved")
+	}
+}
+
+func TestLaunchXSessionWithOptionsSkipsChvtWhenAlreadyOnVT(t *testing.T) {
+	origExec := osExec
+	t.Cleanup(func() { osExec = origExec })
+
+	osExec = mockExecProxy{
+		lookPathFn: func(file string) (string, error) {
+			if file == "chvt" {
+				return "", fmt.Errorf("chvt missing")
+			}
+			return "/mock/" + file, nil
+		},
+		commandFn: func(name string, arg ...string) *exec.Cmd {
+			if name == "chvt" {
+				t.Fatalf("did not expect chvt to run when CurrentVT == VT (%v)", arg)
+			}
+			return helperCommand(name, arg...)
+		},
+	}
+
+	logPath := filepath.Join(t.TempDir(), "startx.log")
+	err := LaunchXSessionWithOptions(LaunchOptions{
+		Bin:       []string{"/bin/sh"},
+		Display:   0,
+		VT:        "1",
+		CurrentVT: "1",
+		StartXLog: logPath,
+	})
+	if err != nil {
+		t.Fatalf("expected CurrentVT == VT to skip chvt cleanly, got: %v", err)
+	}
+}
+
+func TestLaunchXSessionWithOptionsRejectsSymlinkLog(t *testing.T) {
+	origExec := osExec
+	t.Cleanup(func() { osExec = origExec })
+	osExec = mockExecProxy{commandFn: helperCommand}
+
+	tmpDir := t.TempDir()
+	realFile := filepath.Join(tmpDir, "real.log")
+	if err := os.WriteFile(realFile, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	symPath := filepath.Join(tmpDir, "sym.log")
+	if err := os.Symlink(realFile, symPath); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	err := LaunchXSessionWithOptions(LaunchOptions{
+		Bin:       []string{"/bin/sh"},
+		Display:   0,
+		VT:        "2",
+		CurrentVT: "2",
+		StartXLog: symPath,
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlinks are not allowed") {
+		t.Fatalf("expected symlink startXLog error, got %v", err)
 	}
 }

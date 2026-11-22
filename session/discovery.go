@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/arran4/gocdm/config"
 )
 
 var (
@@ -17,6 +19,7 @@ var (
 	XSessionsDir       = "/usr/share/xsessions"
 	WaylandSessionsDir = "/usr/share/wayland-sessions"
 	ShellsFile         = "/etc/shells"
+	discoveryGeteuid   = os.Geteuid
 )
 
 var postParseDesktopHooks []func(string, *Discoverer) string
@@ -27,10 +30,12 @@ func RegisterPostParseDesktopHook(hook func(string, *Discoverer) string) {
 }
 
 type Session struct {
-	Name string
-	Exec string
-	Type string // "X", "C", or "W" (Wayland)
-	Path string
+	Name         string
+	Exec         string
+	Type         string // "X", "C", or "W" (Wayland)
+	Path         string
+	DesktopID    string
+	DesktopNames []string
 }
 
 type Discoverer struct {
@@ -87,27 +92,35 @@ func (d *Discoverer) Discover(userHome string) ([]Session, error) {
 	}
 
 	// 1. User specific sessions (Highest priority)
-	// ~/.xsession, ~/.xinitrc
-	userSessions, err := d.discoverUserSessions(userHome)
-	if err == nil {
-		for _, s := range userSessions {
-			addSession(s)
-		}
-	}
+	if userHome != "" {
+		rejectSymlinks := discoveryGeteuid() == 0
 
-	// ~/.local/share/xsessions
-	localXSessions, err := d.discoverCustomSessions(filepath.Join(userHome, ".local", "share", "xsessions"), "X")
-	if err == nil {
-		for _, s := range localXSessions {
-			addSession(s)
+		// ~/.xsession, ~/.xinitrc
+		userSessions, err := d.discoverUserSessions(userHome, rejectSymlinks)
+		if err == nil {
+			for _, s := range userSessions {
+				addSession(s)
+			}
 		}
-	}
 
-	// ~/.config/wayland-sessions
-	localWaylandSessions, err := d.discoverCustomSessions(filepath.Join(userHome, ".config", "wayland-sessions"), "W")
-	if err == nil {
-		for _, s := range localWaylandSessions {
-			addSession(s)
+		// ~/.local/share/xsessions
+		if !rejectSymlinks || !hasSymlinkComponent(userHome, ".local", "share", "xsessions") {
+			localXSessions, err := d.discoverCustomSessionsWithPolicy(filepath.Join(userHome, ".local", "share", "xsessions"), "X", rejectSymlinks)
+			if err == nil {
+				for _, s := range localXSessions {
+					addSession(s)
+				}
+			}
+		}
+
+		// ~/.config/wayland-sessions
+		if !rejectSymlinks || !hasSymlinkComponent(userHome, ".config", "wayland-sessions") {
+			localWaylandSessions, err := d.discoverCustomSessionsWithPolicy(filepath.Join(userHome, ".config", "wayland-sessions"), "W", rejectSymlinks)
+			if err == nil {
+				for _, s := range localWaylandSessions {
+					addSession(s)
+				}
+			}
 		}
 	}
 
@@ -152,12 +165,36 @@ func (d *Discoverer) Discover(userHome string) ([]Session, error) {
 	return sessions, nil
 }
 
-func (d *Discoverer) discoverUserSessions(home string) ([]Session, error) {
+func hasSymlinkComponent(base string, parts ...string) bool {
+	cur := base
+	for _, p := range parts {
+		cur = filepath.Join(cur, p)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			return false
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Discoverer) discoverUserSessions(home string, rejectSymlinks bool) ([]Session, error) {
 	var sessions []Session
 
 	checkFile := func(filename, name string) {
 		path := filepath.Join(home, filename)
-		info, err := os.Stat(path)
+		var info os.FileInfo
+		var err error
+		if rejectSymlinks {
+			info, err = os.Lstat(path)
+			if err != nil || info.Mode()&os.ModeSymlink != 0 {
+				return
+			}
+		} else {
+			info, err = os.Stat(path)
+		}
 		if err == nil && !info.IsDir() {
 			// Check if executable? Usually shells source them, but let's assume if it exists it's runnable via sh
 			// Or check execute bit?
@@ -180,6 +217,10 @@ func (d *Discoverer) discoverUserSessions(home string) ([]Session, error) {
 }
 
 func (d *Discoverer) discoverCustomSessions(dir string, sessionType string) ([]Session, error) {
+	return d.discoverCustomSessionsWithPolicy(dir, sessionType, false)
+}
+
+func (d *Discoverer) discoverCustomSessionsWithPolicy(dir string, sessionType string, rejectSymlinks bool) ([]Session, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -191,10 +232,20 @@ func (d *Discoverer) discoverCustomSessions(dir string, sessionType string) ([]S
 
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".desktop") {
+			if rejectSymlinks && entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
 			wg.Add(1)
 			go func(name string) {
 				defer wg.Done()
-				session, err := d.parseDesktopFile(filepath.Join(dir, name), sessionType)
+				desktopPath := filepath.Join(dir, name)
+				if rejectSymlinks {
+					info, err := os.Lstat(desktopPath)
+					if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+						return
+					}
+				}
+				session, err := d.parseDesktopFile(desktopPath, sessionType)
 				if err == nil {
 					mu.Lock()
 					sessions = append(sessions, session)
@@ -298,10 +349,23 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 	defer file.Close()
 
 	var execCmd, name, tryExec string
+	var desktopNames []string
+	var hidden, noDisplay bool
+	sawSection := false
+	inDesktopEntry := false
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			sawSection = true
+			inDesktopEntry = line == "[Desktop Entry]"
+			continue
+		}
+		if sawSection && !inDesktopEntry {
 			continue
 		}
 		parts := strings.SplitN(line, "=", 2)
@@ -319,7 +383,22 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 			name = value
 		case strings.HasPrefix(key, "Name[") && strings.HasSuffix(key, "]") && name == "":
 			name = value
+		case key == "DesktopNames":
+			desktopNames = desktopNames[:0]
+			for _, part := range strings.Split(value, ";") {
+				if trimmed := strings.TrimSpace(part); trimmed != "" {
+					desktopNames = append(desktopNames, trimmed)
+				}
+			}
+		case key == "Hidden":
+			hidden = strings.EqualFold(value, "true")
+		case key == "NoDisplay":
+			noDisplay = strings.EqualFold(value, "true")
 		}
+	}
+
+	if hidden || noDisplay {
+		return Session{}, fmt.Errorf("session %q is hidden", path)
 	}
 
 	if execCmd == "" || name == "" {
@@ -343,7 +422,10 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 	// Some Exec lines are complex, e.g. "gnome-session --session=gnome"
 	// We only check the first token.
 	if tryExec == "" {
-		cmdParts := strings.Fields(execCmd)
+		cmdParts, splitErr := config.SplitCommand(execCmd)
+		if splitErr != nil {
+			cmdParts = strings.Fields(execCmd)
+		}
 		if len(cmdParts) > 0 {
 			bin := cmdParts[0]
 			// Only check if it's an absolute path or in PATH
@@ -355,9 +437,11 @@ func (d *Discoverer) parseDesktopFile(path string, defaultType string) (Session,
 	}
 
 	return Session{
-		Name: name,
-		Exec: execCmd,
-		Type: defaultType,
-		Path: path,
+		Name:         name,
+		Exec:         execCmd,
+		Type:         defaultType,
+		Path:         path,
+		DesktopID:    strings.TrimSuffix(filepath.Base(path), ".desktop"),
+		DesktopNames: desktopNames,
 	}, nil
 }

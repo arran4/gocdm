@@ -192,3 +192,181 @@ demouser2:x:1001:1001:Demo User 2:/home/demouser2:/bin/bash
 		})
 	}
 }
+
+func TestBuildGettySessionEnvTrustBoundary(t *testing.T) {
+	tmpDir := t.TempDir()
+	pamEnvPath := filepath.Join(tmpDir, "pam_env.conf")
+	pamEnvData := "EDITOR DEFAULT=vim\nLANG DEFAULT=C.UTF-8\nGREETING OVERRIDE=hi_$USER\n"
+	if err := os.WriteFile(pamEnvPath, []byte(pamEnvData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	acct := &AccountInfo{
+		Username: "alice",
+		UID:      1001,
+		GID:      1001,
+		HomeDir:  "/home/alice",
+		Shell:    "/bin/zsh",
+	}
+
+	launcherEnv := []string{
+		"USER=root",
+		"LOGNAME=root",
+		"HOME=/root",
+		"SHELL=/bin/sh",
+		"PATH=/root/evil:/usr/sbin",
+		"AWS_SECRET_ACCESS_KEY=supersecret",
+		"LD_PRELOAD=/tmp/evil.so",
+		"INVOCATION_ID=systemd-getty-123",
+		"JOURNAL_STREAM=8:1234",
+		"XDG_RUNTIME_DIR=/run/user/0",
+		"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus",
+		"TERM=xterm-256color",
+		"LANG=en_AU.UTF-8",
+		"LC_TIME=en_GB.UTF-8",
+	}
+
+	t.Run("strips secrets and preserves PAM and locale", func(t *testing.T) {
+		env, err := BuildGettySessionEnv(GettyEnvOptions{
+			LauncherEnv: launcherEnv,
+			Account:     acct,
+			PamEnvFile:  pamEnvPath,
+			PamSessionEnv: []string{
+				"XDG_RUNTIME_DIR=/run/user/1001",
+				"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus",
+				"XDG_SESSION_ID=7",
+			},
+			SessionType: "W",
+			SessionName: "Plasma (Wayland)",
+			WorkingDir:  "/home/alice",
+			SpawnPID:    4242,
+		})
+		if err != nil {
+			t.Fatalf("BuildGettySessionEnv failed: %v", err)
+		}
+
+		envMap := EnvSliceToMap(env)
+		for _, leaked := range []string{"AWS_SECRET_ACCESS_KEY", "LD_PRELOAD", "INVOCATION_ID", "JOURNAL_STREAM"} {
+			if _, ok := envMap[leaked]; ok {
+				t.Fatalf("launcher variable %s must not leak into session env", leaked)
+			}
+		}
+		if envMap["USER"] != "alice" || envMap["LOGNAME"] != "alice" || envMap["HOME"] != "/home/alice" || envMap["SHELL"] != "/bin/zsh" {
+			t.Fatalf("unexpected identity vars: USER=%q LOGNAME=%q HOME=%q SHELL=%q", envMap["USER"], envMap["LOGNAME"], envMap["HOME"], envMap["SHELL"])
+		}
+		if envMap["PATH"] != "/usr/local/bin:/usr/bin:/bin" {
+			t.Fatalf("unexpected non-root PATH: %q", envMap["PATH"])
+		}
+		if envMap["TERM"] != "xterm-256color" || envMap["LANG"] != "en_AU.UTF-8" || envMap["LC_TIME"] != "en_GB.UTF-8" {
+			t.Fatalf("expected allowlisted TERM/locale preserved, got TERM=%q LANG=%q LC_TIME=%q", envMap["TERM"], envMap["LANG"], envMap["LC_TIME"])
+		}
+		if envMap["EDITOR"] != "vim" || envMap["GREETING"] != "hi_alice" {
+			t.Fatalf("expected pam_env.conf applied, got EDITOR=%q GREETING=%q", envMap["EDITOR"], envMap["GREETING"])
+		}
+		if envMap["XDG_RUNTIME_DIR"] != "/run/user/1001" || envMap["DBUS_SESSION_BUS_ADDRESS"] != "unix:path=/run/user/1001/bus" || envMap["XDG_SESSION_ID"] != "7" {
+			t.Fatalf("expected authoritative PAM env values, got %v", envMap)
+		}
+		if envMap["XDG_SESSION_TYPE"] != "wayland" || envMap["XDG_SESSION_CLASS"] != "user" || envMap["DESKTOP_SESSION"] != "Plasma (Wayland)" {
+			t.Fatalf("unexpected wayland session vars: %v", envMap)
+		}
+		if envMap["PWD"] != "/home/alice" || envMap["GOCDM_SPAWN"] != "4242" {
+			t.Fatalf("unexpected PWD/GOCDM_SPAWN: PWD=%q GOCDM_SPAWN=%q", envMap["PWD"], envMap["GOCDM_SPAWN"])
+		}
+	})
+
+	t.Run("does not fabricate runtime or dbus vars and omits desktop vars for console", func(t *testing.T) {
+		env, err := BuildGettySessionEnv(GettyEnvOptions{
+			LauncherEnv: launcherEnv,
+			Account:     acct,
+			SessionType: "C",
+			SessionName: "zsh",
+			WorkingDir:  "/home/alice",
+		})
+		if err != nil {
+			t.Fatalf("BuildGettySessionEnv failed: %v", err)
+		}
+		envMap := EnvSliceToMap(env)
+		for _, forbidden := range []string{"XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "XDG_SESSION_ID", "DESKTOP_SESSION", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"} {
+			if _, ok := envMap[forbidden]; ok {
+				t.Fatalf("console env without PAM session vars must not fabricate %s (got %q)", forbidden, envMap[forbidden])
+			}
+		}
+		if envMap["XDG_SESSION_TYPE"] != "tty" || envMap["XDG_SESSION_CLASS"] != "user" {
+			t.Fatalf("unexpected console XDG_SESSION vars: %v", envMap)
+		}
+	})
+
+	t.Run("root account gets sbin PATH and default TERM linux", func(t *testing.T) {
+		env, err := BuildGettySessionEnv(GettyEnvOptions{
+			Account:     &AccountInfo{Username: "root", UID: 0, HomeDir: "/root", Shell: "/bin/bash"},
+			SessionType: "C",
+		})
+		if err != nil {
+			t.Fatalf("BuildGettySessionEnv failed: %v", err)
+		}
+		envMap := EnvSliceToMap(env)
+		if envMap["PATH"] != "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" {
+			t.Fatalf("unexpected root PATH: %q", envMap["PATH"])
+		}
+		if envMap["TERM"] != "linux" {
+			t.Fatalf("expected default TERM=linux, got %q", envMap["TERM"])
+		}
+	})
+
+	t.Run("maps explicit DesktopSession and CurrentDesktop separately without fabricating runtime vars", func(t *testing.T) {
+		env, err := BuildGettySessionEnv(GettyEnvOptions{
+			LauncherEnv:    launcherEnv,
+			Account:        acct,
+			SessionType:    "W",
+			SessionName:    "Plasma (Wayland)",
+			DesktopSession: "plasma",
+			CurrentDesktop: "KDE",
+			WorkingDir:     "/home/alice",
+		})
+		if err != nil {
+			t.Fatalf("BuildGettySessionEnv failed: %v", err)
+		}
+		envMap := EnvSliceToMap(env)
+		if envMap["XDG_SESSION_DESKTOP"] != "plasma" || envMap["DESKTOP_SESSION"] != "plasma" || envMap["XDG_CURRENT_DESKTOP"] != "KDE" {
+			t.Fatalf("unexpected desktop vars: %v", envMap)
+		}
+		for _, forbidden := range []string{"XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "XAUTHORITY"} {
+			if _, ok := envMap[forbidden]; ok {
+				t.Fatalf("must not fabricate %s when PAM/session did not set it", forbidden)
+			}
+		}
+	})
+
+	t.Run("errors on nil account or unreadable pam_env path", func(t *testing.T) {
+		if _, err := BuildGettySessionEnv(GettyEnvOptions{}); err == nil {
+			t.Fatal("expected error for nil Account")
+		}
+		if _, err := BuildGettySessionEnv(GettyEnvOptions{
+			Account:    acct,
+			PamEnvFile: tmpDir, // directory cannot be scanned as file
+		}); err == nil {
+			t.Fatal("expected error when reading unreadable pam_env path")
+		}
+	})
+}
+
+func TestBuildUserSessionEnv(t *testing.T) {
+	env := BuildUserSessionEnv(UserEnvOptions{
+		BaseEnv:        []string{"USER=alice", "CUSTOM_VAR=kept"},
+		SessionType:    "X",
+		SessionName:    "Xfce Session",
+		DesktopSession: "xfce",
+		CurrentDesktop: "XFCE:GTK",
+		SpawnPID:       99,
+	})
+	envMap := EnvSliceToMap(env)
+	if envMap["CUSTOM_VAR"] != "kept" {
+		t.Fatalf("expected inherited user variable kept, got %q", envMap["CUSTOM_VAR"])
+	}
+	if _, ok := envMap["XDG_RUNTIME_DIR"]; ok {
+		t.Fatal("must not fabricate XDG_RUNTIME_DIR")
+	}
+	if envMap["XDG_SESSION_TYPE"] != "x11" || envMap["DESKTOP_SESSION"] != "xfce" || envMap["XDG_SESSION_DESKTOP"] != "xfce" || envMap["XDG_CURRENT_DESKTOP"] != "XFCE:GTK" || envMap["GOCDM_SPAWN"] != "99" {
+		t.Fatalf("unexpected session metadata: %v", envMap)
+	}
+}
